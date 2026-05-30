@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+bulk_images/
+reels_output/
+assets/products.json
+bulk_schedule.csv
+.venv/
+venv/
+env/
+.DS_Store
