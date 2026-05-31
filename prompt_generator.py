@@ -50,7 +50,7 @@ CRITICAL REQUIREMENT: The entire output (all values in the JSON) MUST BE STRICTL
                 "Content-Type": "application/json"
             }
             payload = {
-                "model": "meta/llama-3.1-70b-instruct",
+                "model": "Llama-4 Maverick",
                 "messages": [
                     {
                         "role": "system",
