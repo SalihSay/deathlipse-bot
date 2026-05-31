@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import video_generator
+import youtube_uploader
 
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -144,6 +145,53 @@ async def post_video_to_meta_graph_reels(video_path, caption):
             return False
     except Exception as e:
         print("Meta Reels exception:", e)
+        return False
+
+def post_to_threads(image_path, caption, product_url):
+    if not META_ACCESS_TOKEN or not META_IG_USER_ID:
+        print("[!] Meta API tokens missing for Threads.")
+        return False
+        
+    image_url = upload_to_catbox(image_path)
+    if not image_url:
+        return False
+        
+    print("Posting to Threads API...")
+    container_url = f"https://graph.threads.net/v1.0/{META_IG_USER_ID}/threads"
+    
+    thread_text = f"{caption}\n\nShop now: {product_url}"
+    payload = {
+        "media_type": "IMAGE",
+        "image_url": image_url,
+        "text": thread_text,
+        "access_token": META_ACCESS_TOKEN
+    }
+    
+    try:
+        resp = requests.post(container_url, data=payload)
+        data = resp.json()
+        if "id" not in data:
+            print(f"Threads Container failed: {data}")
+            return False
+            
+        creation_id = data["id"]
+        # Step 2: Publish
+        publish_url = f"https://graph.threads.net/v1.0/{META_IG_USER_ID}/threads_publish"
+        publish_payload = {
+            "creation_id": creation_id,
+            "access_token": META_ACCESS_TOKEN
+        }
+        pub_resp = requests.post(publish_url, data=publish_payload)
+        pub_data = pub_resp.json()
+        if "id" in pub_data:
+            print(f"Threads Published! ID: {pub_data['id']}")
+            return True
+        else:
+            print(f"Threads Publish failed: {pub_data}")
+            return False
+            
+    except Exception as e:
+        print("Threads API exception:", e)
         return False
 
 def post_to_zernio(text, media_path, platforms_config, media_type="video"):
@@ -330,7 +378,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Video generator çağırarak aynı resimle tekrar video üretiriz (farklı style ve müzik denk gelir)
         await query.edit_message_text("🔄 Video yeniden üretiliyor...")
         try:
-            ptype = "hoodie" if "hoodie" in vid_file else "tshirt"
+            ptype = "t-shirt"
+            for t in ["hoodie", "sweatshirt", "tank_top", "tote_bag", "poster", "t-shirt", "tshirt"]:
+                if t in vid_file.lower():
+                    ptype = "t-shirt" if t == "tshirt" else t
+                    break
             # Hook text json içindeyse alalım
             hook = social_data.get("hook", "") if isinstance(social_data, dict) else ""
             video_generator.generate_tiktok_video(img_file, vid_file, hook_text=hook, product_type=ptype)
@@ -364,10 +416,31 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Meta Reels
         meta_reels_res = await post_video_to_meta_graph_reels(vid_file, caption)
         
+        # YouTube Shorts
+        yt_title = social_data.get("etsy_title", "Deathlipse 🖤") if isinstance(social_data, dict) else "Deathlipse 🖤"
+        yt_desc = caption
+        yt_tags_raw = social_data.get("etsy_tags", "metal,goth,streetwear") if isinstance(social_data, dict) else "metal,goth"
+        if isinstance(yt_tags_raw, str):
+            yt_tags = [t.strip() for t in yt_tags_raw.split(",") if t.strip()]
+        else:
+            yt_tags = yt_tags_raw
+        
+        # Run youtube upload in a separate thread/executor if we don't want to block, 
+        # but for simplicity we will just call it synchronously
+        print("Uploading to YouTube Shorts...")
+        yt_res = youtube_uploader.upload_video_to_shorts(vid_file, yt_title, yt_desc, yt_tags)
+        
+        # Threads
+        threads_res = post_to_threads(img_file, caption, product_url)
+        
         # Story
         story_res = False
         try:
-            ptype = "hoodie" if "hoodie" in vid_file else "tshirt"
+            ptype = "t-shirt"
+            for t in ["hoodie", "sweatshirt", "tank_top", "tote_bag", "poster", "t-shirt", "tshirt"]:
+                if t in vid_file.lower():
+                    ptype = "t-shirt" if t == "tshirt" else t
+                    break
             story_img = video_generator.generate_story_image(img_file, ptype)
             # Hardcoded ETSY link for story as requested by the user
             story_res = post_to_meta_graph(story_img, "https://deathlipse.etsy.com")
@@ -380,8 +453,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         res_msg = "📊 YAYIN SONUÇLARI:\n"
         res_msg += f"✅ TikTok Reel: {'Yayınlandı' if t_res else 'Başarısız'}\n"
-        res_msg += f"✅ Instagram Reel: {'Yayınlandı' if i_res else 'Başarısız'}\n"
-        res_msg += f"✅ Instagram Story: {'Yayınlandı' if story_res else 'Başarısız'}\n\n"
+        res_msg += f"✅ Pinterest: {'Yayınlandı' if p_res else 'Başarısız'}\n"
+        res_msg += f"✅ Instagram Reel: {'Yayınlandı' if meta_reels_res else 'Başarısız'}\n"
+        res_msg += f"✅ Instagram Story: {'Yayınlandı' if story_res else 'Başarısız'}\n"
+        res_msg += f"✅ Threads: {'Yayınlandı' if threads_res else 'Başarısız'}\n"
+        res_msg += f"✅ YouTube Shorts: {'Yayınlandı' if yt_res else 'Başarısız'}\n\n"
         res_msg += f"🔗 Etsy: {product_url}"
         
         await query.edit_message_text(res_msg)
@@ -405,8 +481,7 @@ def main():
     # TR Saati (UTC+3) -> 09:00 TR == 06:00 UTC
     target_time = dt_time(hour=6, minute=0, tzinfo=timezone.utc)
     
-    # Send once immediately for testing, then schedule daily
-    job_queue.run_once(check_for_posts, 5)
+    # Schedule daily
     job_queue.run_daily(check_for_posts, target_time)
     
     # Check token expiry daily
