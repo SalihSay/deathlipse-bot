@@ -11,3 +11,5 @@ env/
 .DS_Store
 oracle_key.pem
 test_qwen_nvidia.py
+client_secrets.json
+token.json
