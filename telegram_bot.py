@@ -1,25 +1,31 @@
 import os
 import csv
-import sys
+import json
 import time
 import requests
+from datetime import datetime, time as dt_time, timezone
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import video_generator
 
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_GROUP_ID = os.getenv("TELEGRAM_GROUP_ID", "")
 
-# Zernio API (TikTok + Pinterest + Instagram)
+# Zernio API (TikTok + Instagram Reels)
 ZERNIO_API_KEY = os.getenv("ZERNIO_API_KEY", "")
 ZERNIO_TIKTOK_ACCOUNT_ID = os.getenv("ZERNIO_TIKTOK_ACCOUNT_ID", "")
 ZERNIO_INSTAGRAM_ACCOUNT_ID = os.getenv("ZERNIO_INSTAGRAM_ACCOUNT_ID", "")
 
+# Meta Graph API (Instagram Stories)
+META_ACCESS_TOKEN = os.getenv("META_PAGE_ACCESS_TOKEN", "")
+META_IG_USER_ID = os.getenv("META_IG_USER_ID", "")
+
 CSV_FILE = "bulk_schedule.csv"
+POSTED_JSON = "assets/posted_products.json"
 
 def upload_to_catbox(file_path):
-    """Dosyayı catbox.moe'ye yükler ve public URL döner."""
     print(f"Uploading to catbox.moe: {file_path}")
     url = "https://catbox.moe/user/api.php"
     with open(file_path, "rb") as f:
@@ -28,31 +34,68 @@ def upload_to_catbox(file_path):
         try:
             resp = requests.post(url, data=data, files=files)
             if resp.status_code == 200 and resp.text.startswith("https://files.catbox.moe/"):
-                url_view = resp.text.strip()
-                print(f"Upload success! Public URL: {url_view}")
-                return url_view
-            else:
-                print(f"Upload failed. Status: {resp.status_code}, Response: {resp.text}")
+                return resp.text.strip()
+            print(f"Upload failed. Response: {resp.text}")
         except Exception as e:
             print("Upload exception:", e)
     return None
 
-def post_to_zernio(text, media_path, platforms_config, media_type="image"):
-    """Zernio API üzerinden sosyal medyaya gönderi atar.
-    
-    platforms_config: [{"platform": "tiktok", "accountId": "xxx"}, ...]
-    media_type: "image" veya "video"
-    """
-    if not ZERNIO_API_KEY:
-        print("[!] ZERNIO_API_KEY eksik.")
+def post_to_meta_graph(story_image_path, product_url):
+    if not META_ACCESS_TOKEN or not META_IG_USER_ID:
+        print("[!] Meta API tokens missing.")
         return False
+        
+    image_url = upload_to_catbox(story_image_path)
+    if not image_url:
+        return False
+        
+    print("Posting Story to Meta Graph API...")
+    # Step 1: Create Container
+    container_url = f"https://graph.facebook.com/v19.0/{META_IG_USER_ID}/media"
+    payload = {
+        "image_url": image_url,
+        "media_type": "STORIES",
+        "access_token": META_ACCESS_TOKEN
+    }
     
-    # Dosyayı catbox'a yükle
+    # Story link sticker parameter is strictly NOT supported by Instagram Graph API
+    # so we rely on "Link in Bio" text instead.
+    
+    try:
+        resp = requests.post(container_url, data=payload)
+        data = resp.json()
+        if "id" not in data:
+            print(f"Container failed: {data}")
+            return False
+            
+        creation_id = data["id"]
+        # Step 2: Publish
+        publish_url = f"https://graph.facebook.com/v19.0/{META_IG_USER_ID}/media_publish"
+        publish_payload = {
+            "creation_id": creation_id,
+            "access_token": META_ACCESS_TOKEN
+        }
+        pub_resp = requests.post(publish_url, data=publish_payload)
+        pub_data = pub_resp.json()
+        if "id" in pub_data:
+            print(f"Meta Graph Story Published! ID: {pub_data['id']}")
+            return True
+        else:
+            print(f"Publish failed: {pub_data}")
+            return False
+            
+    except Exception as e:
+        print("Meta Graph API exception:", e)
+        return False
+
+def post_to_zernio(text, media_path, platforms_config, media_type="video"):
+    if not ZERNIO_API_KEY:
+        return False
+        
     media_url = upload_to_catbox(media_path)
     if not media_url:
-        print("Media yükleme başarısız, atlanıyor.")
         return False
-    
+        
     url = "https://zernio.com/api/v1/posts"
     headers = {
         "Authorization": f"Bearer {ZERNIO_API_KEY}",
@@ -65,47 +108,14 @@ def post_to_zernio(text, media_path, platforms_config, media_type="image"):
         "publishNow": True
     }
     
-    platform_names = [p["platform"] for p in platforms_config]
-    print(f"Posting to Zernio on platforms {platform_names}...")
     try:
         resp = requests.post(url, json=payload, headers=headers)
         if resp.status_code in [200, 201]:
-            print(f"Zernio: Başarıyla yayınlandı! ({platform_names})")
             return True
-        else:
-            print(f"Zernio post failed. Status: {resp.status_code}, Response: {resp.text}")
+        print(f"Zernio post failed: {resp.text}")
     except Exception as e:
         print("Zernio API exception:", e)
     return False
-
-def post_to_make_webhook(text, media_path):
-    """Make.com webhook'una Instagram için gönderi atar."""
-    webhook_url = "https://hook.eu1.make.com/g7x2lrnd8dm7vcz5cf670ygoutfxltc8"
-    
-    # Dosyayı catbox'a yükle
-    media_url = upload_to_catbox(media_path)
-    if not media_url:
-        print("Make Webhook: Media yükleme başarısız, atlanıyor.")
-        return False
-        
-    payload = {
-        "caption": text,
-        "video_url": media_url,
-        "media_url": media_url # her ihtimale karşı ikisini de gönderiyoruz
-    }
-    
-    print("Posting to Make.com Webhook (Instagram)...")
-    try:
-        resp = requests.post(webhook_url, json=payload)
-        if resp.status_code in [200, 201, 202]:
-            print("Make Webhook: Başarıyla gönderildi!")
-            return True
-        else:
-            print(f"Make Webhook failed. Status: {resp.status_code}, Response: {resp.text}")
-    except Exception as e:
-        print("Make Webhook exception:", e)
-    return False
-
 
 def get_next_pending_post():
     if not os.path.isfile(CSV_FILE):
@@ -116,11 +126,12 @@ def get_next_pending_post():
         row = reader[i]
         while len(row) < 6:
             row.append("PENDING")
-        if row[5] not in ["PUBLISHED", "SKIPPED"]:
+        if row[5] == "PENDING":
             return row, i
     return None, -1
 
-def update_csv_status(index, status):
+def update_status(index, status, product_id=""):
+    # Update CSV
     with open(CSV_FILE, "r", encoding="utf-8") as f:
         reader = list(csv.reader(f))
     while len(reader[index]) < 6:
@@ -128,8 +139,45 @@ def update_csv_status(index, status):
     reader[index][5] = status
     with open(CSV_FILE, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        for r in reader:
-            writer.writerow(r)
+        writer.writerows(reader)
+        
+    # Update JSON
+    if product_id and os.path.exists(POSTED_JSON):
+        try:
+            with open(POSTED_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if product_id in data:
+                data[product_id]["status"] = status
+                with open(POSTED_JSON, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=4)
+        except Exception as e:
+            print("Failed to update posted_products.json:", e)
+
+async def check_token_expiry(context: ContextTypes.DEFAULT_TYPE):
+    # .env'den statik tarihi çek
+    issue_date_str = os.getenv("META_TOKEN_ISSUE_DATE", "")
+    
+    if not issue_date_str:
+        print("[!] META_TOKEN_ISSUE_DATE bulunamadı, token süresi takip edilemiyor.")
+        return
+        
+    try:
+        # Tarihi datetime objesine çevir (Örn: 2026-05-31)
+        issue_date = datetime.strptime(issue_date_str, "%Y-%m-%d")
+        current_date = datetime.now()
+        
+        # Kaç gün geçmiş?
+        days_elapsed = (current_date - issue_date).days
+        days_left = 60 - days_elapsed
+        
+        if 0 < days_left <= 7:
+            msg = f"⚠️ Meta API token'ın {days_left} gün içinde dolacak. Yenilemeniz gerekiyor."
+            await context.bot.send_message(chat_id=TELEGRAM_GROUP_ID, text=msg)
+        elif days_left <= 0:
+            msg = "❌ Meta API token'ın süresi doldu! Acilen yenilenmeli."
+            await context.bot.send_message(chat_id=TELEGRAM_GROUP_ID, text=msg)
+    except Exception as e:
+        print(f"Token date parsing exception: {e}")
 
 async def check_for_posts(context: ContextTypes.DEFAULT_TYPE):
     row, index = get_next_pending_post()
@@ -137,47 +185,50 @@ async def check_for_posts(context: ContextTypes.DEFAULT_TYPE):
         print("No pending posts right now.")
         return
         
-    if len(row) >= 5 and ".mp4" in row[3]:
-        # 5 kolonlu format (IG Text, Pin Text, Image, Video, URL)
-        ig_text = row[0]
-        pin_text = row[1]
-        img_file = f"bulk_images/{row[2]}"
-        vid_file = f"reels_output/{row[3]}"
-        product_url = row[4] if len(row) > 4 else "URL Yok"
-    else:
-        # 3 kolonlu format (Text, Image, URL)
-        ig_text = row[0]
-        pin_text = row[0]  # Aynı metni kullan
-        img_file = f"bulk_images/{row[1]}"
-        vid_file = ""  # Video yok
-        product_url = row[2] if len(row) > 2 else "URL Yok"
+    try:
+        social_data = json.loads(row[0])
+    except:
+        social_data = {"caption_a": row[0]}
+        
+    pin_text = row[1]
+    img_file = f"bulk_images/{row[2]}"
+    vid_file = f"reels_output/{row[3]}"
+    product_url = row[4]
     
-    message_text = f"🚨 YENİ GÖNDERİ ONAY BEKLİYOR 🚨\n\n"
-    message_text += f"🛍️ Ürün Linki: {product_url}\n\n"
-    message_text += f"📝 IG/TikTok Metni:\n{ig_text}\n\n"
-    message_text += f"📝 Pinterest Metni:\n{pin_text}\n\n"
-    message_text += "👆 Kararınız: Aşağıdan Onaylayın veya Atlayın."
+    msg = "🎬 YENİ GÖNDERİ ONAY BEKLİYOR\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n📝 CAPTION A (Agresif):\n"
+    msg += f"{social_data.get('caption_a', 'N/A')}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n📝 CAPTION B (Dark Poetry):\n"
+    msg += f"{social_data.get('caption_b', 'N/A')}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n📌 PİNTEREST:\n"
+    msg += f"{social_data.get('pinterest', pin_text)}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n🛒 ETSY LİSTİNG OPTİMİZASYONU:\n"
+    msg += f"Başlık: {social_data.get('etsy_title', 'N/A')}\n"
+    msg += f"Etiketler: {', '.join(social_data.get('etsy_tags', []))}\n"
+    msg += f"Açıklama: {social_data.get('etsy_description', 'N/A')}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"🔗 ÜRÜN LİNKİ (Story için kopyala):\n{product_url}\n\n"
+    msg += "⏰ ÖNERİLEN PAYLAŞIM SAATİ:\nBugün 21:00-22:00 EST (TR: 04:00-05:00)\n\n━━━━━━━━━━━━━━━━━━━━━━"
 
     keyboard = [
-        [InlineKeyboardButton("✅ Onayla ve Yayınla (Publish)", callback_data=f"approve_{index}")],
-        [InlineKeyboardButton("❌ İptal Et ve Atla (Skip)", callback_data=f"skip_{index}")]
+        [InlineKeyboardButton("✅ Yayınla (Caption A)", callback_data=f"approveA_{index}"),
+         InlineKeyboardButton("✅ Yayınla (Caption B)", callback_data=f"approveB_{index}")],
+        [InlineKeyboardButton("🔄 Yeniden Üret", callback_data=f"recreate_{index}"),
+         InlineKeyboardButton("❌ Atla", callback_data=f"skip_{index}")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
-        # Önce Reels videosunu önizleme için gönder (sunucudaki dosyadan)
         if vid_file and os.path.exists(vid_file):
             with open(vid_file, 'rb') as video:
-                await context.bot.send_video(chat_id=TELEGRAM_GROUP_ID, video=video)
+                await context.bot.send_video(chat_id=TELEGRAM_GROUP_ID, video=video, read_timeout=120, write_timeout=120, connect_timeout=120)
         elif img_file and os.path.exists(img_file):
             with open(img_file, 'rb') as image:
-                await context.bot.send_photo(chat_id=TELEGRAM_GROUP_ID, photo=image)
-        
-        # Sonra metinleri ve butonları yolla
+                await context.bot.send_photo(chat_id=TELEGRAM_GROUP_ID, photo=image, read_timeout=120, write_timeout=120, connect_timeout=120)
+                
         await context.bot.send_message(
             chat_id=TELEGRAM_GROUP_ID, 
-            text=message_text, 
-            reply_markup=reply_markup
+            text=msg, 
+            reply_markup=reply_markup,
+            disable_web_page_preview=True,
+            read_timeout=120,
+            write_timeout=120,
+            connect_timeout=120
         )
     except Exception as e:
         print(f"Failed to send to Telegram: {e}")
@@ -186,11 +237,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    data = query.data
-    action, index_str = data.split('_')
+    action, index_str = query.data.split('_')
     index = int(index_str)
     
-    # Güncel row oku
     with open(CSV_FILE, "r", encoding="utf-8") as f:
         reader = list(csv.reader(f))
         
@@ -199,73 +248,105 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     row = reader[index]
-    if len(row) >= 6 and row[5] in ["PUBLISHED", "SKIPPED"]:
+    if row[5] in ["PUBLISHED", "SKIPPED"]:
         await query.edit_message_text("Bu gönderi zaten işlenmiş.")
         return
         
-    if len(row) >= 5 and ".mp4" in row[3]:
-        ig_text = row[0]
-        pin_text = row[1]
-        img_file = f"bulk_images/{row[2]}"
-        vid_file = f"reels_output/{row[3]}"
-    else:
-        ig_text = row[0]
-        pin_text = row[0]
-        img_file = f"bulk_images/{row[1]}"
-        vid_file = ""
+    vid_file = f"reels_output/{row[3]}"
+    img_file = f"bulk_images/{row[2]}"
+    product_url = row[4]
+    
+    prod_id = row[2].replace("post_", "").replace(".jpg", "")
+    
+    try:
+        social_data = json.loads(row[0])
+        caption = social_data.get("caption_a", "Deathlipse 🖤")
+    except:
+        caption = row[0]
         
     if action == "skip":
-        update_csv_status(index, "SKIPPED")
-        await query.edit_message_text("❌ Gönderi atlandı (Skipped). Yeni gönderi getiriliyor...")
-        await check_for_posts(context)
+        update_status(index, "SKIPPED", prod_id)
+        await query.edit_message_text("❌ Gönderi atlandı (Skipped).")
         
-    elif action == "approve":
-        await query.edit_message_text("⏳ Yayınlanıyor... Lütfen bekleyin...")
+    elif action == "recreate":
+        # Video generator çağırarak aynı resimle tekrar video üretiriz (farklı style ve müzik denk gelir)
+        await query.edit_message_text("🔄 Video yeniden üretiliyor...")
+        try:
+            ptype = "hoodie" if "hoodie" in vid_file else "tshirt"
+            # Hook text json içindeyse alalım
+            hook = social_data.get("hook", "") if isinstance(social_data, dict) else ""
+            video_generator.generate_tiktok_video(img_file, vid_file, hook_text=hook, product_type=ptype)
+            await query.edit_message_text("✅ Video yeniden üretildi. Yeniden onay ekranı getiriliyor...")
+            # Yeni onay ekranını yolla
+            await check_for_posts(context)
+        except Exception as e:
+            await query.edit_message_text(f"❌ Yeniden üretim başarısız oldu: {e}")
+            
+    elif action in ["approveA", "approveB"]:
+        await query.edit_message_text("⏳ İşleniyor... Lütfen bekleyin...")
         
-        # ===== TikTok (Video) -> Zernio =====
-        success_tiktok = False
-        if vid_file and os.path.exists(vid_file):
-            tiktok_config = [{"platform": "tiktok", "accountId": ZERNIO_TIKTOK_ACCOUNT_ID}]
-            success_tiktok = post_to_zernio(ig_text, vid_file, tiktok_config, "video")
-        else:
-            print("TikTok: Video dosyası bulunamadı, atlanıyor.")
+        try:
+            if action == "approveB":
+                caption = social_data.get("caption_b", caption)
+            else:
+                caption = social_data.get("caption_a", caption)
+        except Exception:
+            pass
         
-        # ===== Instagram (Video) -> Zernio =====
-        success_ig = False
-        if vid_file and os.path.exists(vid_file):
-            ig_config = [{"platform": "instagram", "accountId": ZERNIO_INSTAGRAM_ACCOUNT_ID}]
-            success_ig = post_to_zernio(ig_text, vid_file, ig_config, "video")
-        else:
-            print("Instagram: Video bulunamadı, atlanıyor.")
+        # Reels
+        tiktok_config = [{"platform": "tiktok", "accountId": ZERNIO_TIKTOK_ACCOUNT_ID}]
+        ig_config = [{"platform": "instagram", "accountId": ZERNIO_INSTAGRAM_ACCOUNT_ID}]
         
-        # Sonuç raporu
-        results = []
-        results.append("Instagram ✅" if success_ig else "Instagram ❌")
-        results.append("TikTok ✅" if success_tiktok else "TikTok ❌")
+        t_res = post_to_zernio(caption, vid_file, tiktok_config, "video")
+        i_res = post_to_zernio(caption, vid_file, ig_config, "video")
         
-        result_text = " | ".join(results)
+        # Story
+        story_res = False
+        try:
+            ptype = "hoodie" if "hoodie" in vid_file else "tshirt"
+            story_img = video_generator.generate_story_image(img_file, ptype)
+            # Hardcoded ETSY link for story as requested by the user
+            story_res = post_to_meta_graph(story_img, "https://deathlipse.etsy.com")
+            if os.path.exists(story_img):
+                os.remove(story_img)
+        except Exception as e:
+            print(f"Story generation failed: {e}")
+            
+        update_status(index, "PUBLISHED", prod_id)
         
-        if success_ig or success_tiktok:
-            update_csv_status(index, "PUBLISHED")
-            await query.edit_message_text(f"Yayın Sonuçları:\n{result_text}")
-        else:
-            await query.edit_message_text(f"⚠️ Hiçbir platforma yayınlanamadı.\n{result_text}")
+        res_msg = "📊 YAYIN SONUÇLARI:\n"
+        res_msg += f"✅ TikTok Reel: {'Yayınlandı' if t_res else 'Başarısız'}\n"
+        res_msg += f"✅ Instagram Reel: {'Yayınlandı' if i_res else 'Başarısız'}\n"
+        res_msg += f"✅ Instagram Story: {'Yayınlandı' if story_res else 'Başarısız'}\n\n"
+        res_msg += f"🔗 Etsy: {product_url}"
+        
+        await query.edit_message_text(res_msg)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Deathlipse Otomasyon Hub'ı Aktif! Ana sunucudan ayrık çalışıyor. Her 6 saatte bir onay postu atacak.")
+    await update.message.reply_text("Deathlipse Otomasyon Hub'ı Aktif! Günde 1 kez onay postu atacak.")
+
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Manuel test tetiklendi, sıradaki gönderi aranıyor...")
+    await check_for_posts(context)
 
 def main():
     print("Starting Deathlipse Telegram Bot...")
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("test", test_command))
     application.add_handler(CallbackQueryHandler(button_callback))
     
     job_queue = application.job_queue
-    # Sunucu çalıştığında hemen test için 1 tane göndersin (5 sn sonra)
+    # TR Saati (UTC+3) -> 09:00 TR == 06:00 UTC
+    target_time = dt_time(hour=6, minute=0, tzinfo=timezone.utc)
+    
+    # Send once immediately for testing, then schedule daily
     job_queue.run_once(check_for_posts, 5)
-    # Ardından her 6 saatte bir (21600 saniye) post onayı göndersin
-    job_queue.run_repeating(check_for_posts, interval=21600, first=21600)
+    job_queue.run_daily(check_for_posts, target_time)
+    
+    # Check token expiry daily
+    job_queue.run_daily(check_token_expiry, target_time)
     
     application.run_polling(drop_pending_updates=True)
 

@@ -59,36 +59,66 @@ def download_product_images(product):
     save_dir = Path(f"assets/images/{product_id}")
     save_dir.mkdir(parents=True, exist_ok=True)
     
-    # Oncelik sirasi: front > main > diger
-    # Tüm görselleri indir (Limit yok, ön/arka kısıtlaması yok)
-    selected = []
+    # Tüm görselleri analiz et
+    # Kullanıcı "dümdüz gözüken ve baskısı olan" fotoğrafı istiyor.
+    # Printify'da "person", "lifestyle", "closeup", "folded" olmayanlar flat-lay'dir.
+    # Flat-lay'ler arasından en yüksek dosya boyutuna sahip olan %99 ihtimalle baskının olduğu taraftır.
+    
+    flat_lays = []
+    others = []
     
     for img in images:
-        is_default = img.get("is_default", False)
-        if is_default:
-            selected.insert(0, img)
+        src = img.get("src", "").lower()
+        if "person" in src or "lifestyle" in src or "closeup" in src or "folded" in src:
+            others.append(img)
         else:
-            selected.append(img)
+            flat_lays.append(img)
+            
+    # Eğer flat-lay yoksa hepsini flat-lay kabul et
+    if not flat_lays:
+        flat_lays = others
+        others = []
 
-    
-    saved_paths = []
-    for i, img in enumerate(selected):
+    # Tüm flat-lay resimleri geçici olarak indir ve boyutlarını ölç
+    temp_downloads = []
+    for i, img in enumerate(flat_lays):
         src = img.get("src", "")
-        img_path = save_dir / f"img_{i}.jpg"
-        
-        # Zaten varsa atla
-        if img_path.exists() and img_path.stat().st_size > 10000:
-            saved_paths.append(str(img_path))
-            continue
-        
+        temp_path = save_dir / f"temp_{i}.jpg"
         try:
             resp = requests.get(src, timeout=30)
             if resp.status_code == 200:
-                img_path.write_bytes(resp.content)
-                saved_paths.append(str(img_path))
-                print(f"  Indirildi: {img_path.name}")
+                temp_path.write_bytes(resp.content)
+                temp_downloads.append({
+                    "path": temp_path,
+                    "size": temp_path.stat().st_size
+                })
         except Exception as e:
-            print(f"  Gorsel indirilemedi: {e}")
+            pass
+            
+    # Dosya boyutuna göre büyükten küçüğe sırala (Büyük olan baskılı olandır)
+    temp_downloads.sort(key=lambda x: x["size"], reverse=True)
+    
+    saved_paths = []
+    
+    # En büyük flat-lay'i img_0.jpg (Ana resim) yap
+    if temp_downloads:
+        best_img_path = save_dir / "img_0.jpg"
+        if best_img_path.exists():
+            best_img_path.unlink() # Eskisini sil
+        temp_downloads[0]["path"].rename(best_img_path)
+        saved_paths.append(str(best_img_path))
+        print(f"  Ana Gorsel (Baskili) Secildi: {best_img_path.name} ({temp_downloads[0]['size']} bytes)")
+        
+        # Diğer flat-layleri sırasıyla kaydet
+        for i, t in enumerate(temp_downloads[1:], 1):
+            other_path = save_dir / f"img_{i}.jpg"
+            if other_path.exists():
+                other_path.unlink()
+            t["path"].rename(other_path)
+            saved_paths.append(str(other_path))
+            
+    # Geri kalan "person/model" resimlerini indirmeye gerek yok çünkü sistem sadece 1 resim kullanıyor
+    # Videolarda karmaşa olmaması için sadece seçili img_0 kullanılıyor.
     
     # Fiyat bilgisini al
     price = 0

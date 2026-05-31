@@ -3,9 +3,14 @@ import csv
 import json
 import random
 import requests
+import argparse
+from datetime import datetime
 from PIL import Image
 from dotenv import load_dotenv
 import time
+from rembg import remove
+import video_generator
+from prompt_generator import generate_social_caption
 
 load_dotenv()
 PRINTIFY_TOKEN = os.getenv("PRINTIFY_TOKEN")
@@ -111,89 +116,48 @@ def composite_design_on_model(model_bytes, design_bytes, output_filename):
         print(f"Error compositing image: {e}")
         return False
 
-def generate_social_caption(product_title):
-    prompt = f"""
-    You are the elite social media manager for DEATHLIPSE, an underground heavy metal apparel brand.
-    Write social media copy for this product: {product_title}
-    
-    Rules for IG_TikTok:
-    1. Max 2 short, punchy sentences. Dark, aggressive, edgy tone.
-    2. Inject scarcity/urgency (e.g., "Limited stock", "Underground exclusive").
-    3. Direct Call to Action: Tell them exactly what to do (e.g., "Wear the darkness. ↓ Link in bio to shop ↓").
-    4. Exactly 10 targeted heavy metal/goth hashtags.
-    
-    Rules for Pinterest:
-    1. Write a 3-4 sentence SEO-optimized description targeting US buyers searching for heavy metal fashion.
-    2. Focus on keywords like "alternative clothing", "goth aesthetic", "vintage metal shirt".
-    3. End with "Shop the collection now."
-    
-    Return EXACTLY a raw JSON object and nothing else. No markdown formatting.
-    {{
-      "ig_tiktok": "Caption here... #hashtags",
-      "pinterest": "SEO description here..."
-    }}
-    """
-    
-    try:
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.8,
-                "response_format": {"type": "json_object"}
-            },
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            result = json.loads(resp.json()["choices"][0]["message"]["content"])
-            return result.get("ig_tiktok", ""), result.get("pinterest", "")
-    except Exception as e:
-        print(f"Error generating caption: {e}")
-        
-    fallback_ig = f"Unleash the darkness. Limited drop of the {product_title}. ↓ Link in bio to shop ↓\n\n#heavymetal #metalhead #deathmetal #blackmetal #goth #metalmerch #altfashion #darkaesthetic #metalclothing #metalstyle"
-    fallback_pin = f"Discover the {product_title} from Deathlipse. Perfect for your dark aesthetic and heavy metal wardrobe. High-quality alternative clothing and goth fashion. Shop the collection now."
-    return fallback_ig, fallback_pin
 
-def main():
-    print("--- BULK SOCIAL MEDIA GENERATOR (BUFFER/METRICOOL) ---")
+def main(batch_limit=1):
+    print(f"Starting Bulk Content Generator (Limit: {batch_limit})...")
     products = get_all_products()
     if not products:
         print("No products found.")
         return
         
-    print(f"Found {len(products)} products.")
-    
+    posted_products = {}
+    if os.path.exists("assets/posted_products.json"):
+        with open("assets/posted_products.json", "r", encoding="utf-8") as f:
+            try:
+                posted_products = json.load(f)
+            except:
+                pass
+                
+    # processed_ids from CSV
     processed_ids = set()
     csv_file = "bulk_schedule.csv"
-    file_exists = os.path.isfile(csv_file)
-    
-    if file_exists:
+    if os.path.exists(csv_file):
         with open(csv_file, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
+            next(reader, None) # Skip header
             for row in reader:
-                if len(row) > 1 and row[1].startswith('post_'):
-                    # filename is like post_6706591e158d8c4d550f058c.jpg
-                    pid = row[1].replace('post_', '').replace('.jpg', '')
+                if len(row) > 1:
+                    pid = row[2].replace('post_', '').replace('.jpg', '')
                     processed_ids.add(pid)
                     
+    print(f"-> Found {len(processed_ids)} products in CSV and {len(posted_products)} in JSON.")
+    
+    file_exists = os.path.exists(csv_file)
     with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        # Buffer CSV formati (genellikle): Text, Media URL / Path
         if not file_exists:
             writer.writerow(["IG_TikTok_Text", "Pinterest_Text", "Image_File", "Video_File", "Product_URL", "Status"])
             
-        import video_generator
         generated_count = 0
         for idx, product in enumerate(products):
             print(f"\n[{idx+1}/{len(products)}] Processing: {product.get('title')}")
             
             product_id = product["id"]
-            if product_id in processed_ids:
+            if product_id in processed_ids or product_id in posted_products:
                 print("-> Already processed, skipping.")
                 continue
                 
@@ -224,6 +188,11 @@ def main():
                     mockup_url = img.get("src")
                     break
             
+            clean_title = product.get("title", "").replace(".", "")
+            if "hoodie" not in clean_title.lower() and "t-shirt" not in clean_title.lower() and "tshirt" not in clean_title.lower():
+                print(f"-> Skipping non-apparel product: {clean_title}")
+                continue
+
             if not mockup_url and images:
                 mockup_url = images[0].get("src")
                 
@@ -237,31 +206,57 @@ def main():
                 print("-> Failed to download mockup.")
                 continue
                 
-            filename = f"post_{product['id']}.jpg"
-            # Orijinal Printify mockup resmini doğrudan kaydet
-            with open(f"bulk_images/{filename}", "wb") as f_img:
-                f_img.write(mockup_resp.content)
-            print("-> Printify mockup saved successfully.")
-                
-            print("-> Generating TikTok/Reels video...")
-            video_filename = f"reel_{product['id']}.mp4"
-            video_path = f"reels_output/{video_filename}"
-            video_generator.generate_tiktok_video(f"bulk_images/{filename}", video_path)
+            filename = f"post_{product['id']}.png"
+            # Orijinal Printify mockup resmini doğrudan kaydet ve arka planı sil!
+            print("-> Removing background from mockup...")
+            try:
+                transparent_img = remove(mockup_resp.content)
+                with open(f"bulk_images/{filename}", "wb") as f_img:
+                    f_img.write(transparent_img)
+                print("-> Printify transparent mockup saved successfully.")
+            except Exception as e:
+                print(f"-> Background removal failed: {e}. Saving original.")
+                filename = f"post_{product['id']}.jpg"
+                with open(f"bulk_images/{filename}", "wb") as f_img:
+                    f_img.write(mockup_resp.content)
                 
             print("-> Generating caption...")
             clean_title = product.get("title", "").replace(".", "")
-            ig_caption, pin_caption = generate_social_caption(clean_title)
+            
+            # Ürünün tipini tahmin et
+            product_type = "tshirt"
+            if "hoodie" in clean_title.lower():
+                product_type = "hoodie"
+            elif "sweatshirt" in clean_title.lower():
+                product_type = "sweatshirt"
+                
+            social_data = generate_social_caption(clean_title)
+            hook_text = social_data.get("hook", "")
+            
+            print("-> Generating TikTok/Reels video...")
+            video_filename = f"reel_{product['id']}.mp4"
+            video_path = f"reels_output/{video_filename}"
+            video_generator.generate_tiktok_video(f"bulk_images/{filename}", video_path, hook_text=hook_text, product_type=product_type)
             
             product_url = f"https://www.etsy.com/shop/Deathlipse"
             
-            ig_text = f"{ig_caption}\n\n{product_url}"
-            pin_text = f"{pin_caption}\n\n{product_url}"
-            writer.writerow([ig_text, pin_text, filename, video_filename, product_url, "PENDING"])
+            # JSON'ı encode edip CSV'ye yazalım, telegram_bot.py oradan okusun
+            social_json_str = json.dumps(social_data)
+            writer.writerow([social_json_str, social_data.get("pinterest", ""), filename, video_filename, product_url, "PENDING"])
             print("-> Successfully added to bulk_schedule.csv!")
             
+            # Kalici listeye ekle
+            posted_products[product['id']] = {
+                "title": product['title'],
+                "posted_at": datetime.now().isoformat(),
+                "status": "PENDING"
+            }
+            with open("assets/posted_products.json", "w", encoding="utf-8") as f:
+                json.dump(posted_products, f, indent=4)
+            
             generated_count += 1
-            if generated_count >= 3:
-                print("\n[STOP] Test mode: 3 videos generated successfully. Limit reached.")
+            if generated_count >= batch_limit:
+                print(f"\n[STOP] Batch limit of {batch_limit} videos generated successfully.")
                 break
                 
             time.sleep(2)
@@ -269,4 +264,14 @@ def main():
     print("\nDONE! All posts generated in 'bulk_images/' & 'reels_output/' and 'bulk_schedule.csv' is ready for upload!")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Generate bulk content for Deathlipse Bot")
+    parser.add_argument("--batch", type=int, default=1, help="Number of products to generate (default: 1)")
+    args = parser.parse_args()
+    
+    # Check if limit is specified in env, args override env
+    env_limit = os.getenv("BATCH_LIMIT")
+    batch_limit = args.batch
+    if env_limit and batch_limit == 1:
+        batch_limit = int(env_limit)
+        
+    main(batch_limit)

@@ -1,211 +1,103 @@
-"""
-prompt_generator.py
-Printify urun bilgilerinden metal estetiginde AI video promptu ve
-sosyal medya caption'i otomatik uretir.
-Groq API kullanir (ucretsiz, 14.400 istek/gun) — Gemini fallback.
-"""
 import os
-import random
+import json
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+def generate_social_caption(product_title, price=""):
+    """
+    Groq kullanarak Instagram, Pinterest, TikTok ve Etsy için gerekli
+    tüm SEO, açıklama ve AIDA formatındaki metinleri tek seferde JSON üretir.
+    """
+    if not NVIDIA_API_KEY:
+        print("ERROR: NVIDIA_API_KEY is not set.")
+        return generate_fallback(product_title)
+        
+    prompt = f"""
+Sen Deathlipse'in pazarlama direktörüsün. 
+Underground heavy metal apparel markası.
+Ürün: {product_title}, Fiyat: {price}
 
+Aşağıdaki JSON formatında içerik üret. 
+SADECE geçerli bir JSON formatında metin döndür, markdown veya başka açıklama ekleme.
+Yasaklı ifadeler: "Sınırlı sayıda üretildi", "Son X adet kaldı".
+İzin verilen ifadeler: "Underground exclusive", "Not for everyone", "For the select few", "Limited drop".
+CRITICAL REQUIREMENT: The entire output (all values in the JSON) MUST BE STRICTLY IN ENGLISH. The target audience is the USA. Do NOT output any Turkish words in the JSON values.
 
-def _call_llm(prompt_text):
-    """Groq ile LLM cagrisi yap, olmazsa Gemini dene."""
-
-    # --- GROQ (Birincil, Ucretsiz 14.400 istek/gun) ---
-    if GROQ_API_KEY and "BURAYA" not in GROQ_API_KEY:
+{{
+  "hook": "3-4 words video hook. Directly address the metalhead identity. Use strong verbs.",
+  
+  "caption_a": "AGGRESSIVE TONE.\\nLine 1 (Attention): Address the metalhead identity, no hashtags/price.\\nLine 2 (Interest): Feeling of wearing it, include 'gothic fashion', 'metal aesthetic' or 'alternative clothing'.\\nLine 3 (Action): Clear CTA. 'Underground exclusive. Link in bio. 🖤'\\nEmpty line\\n15-18 hashtags (metal subgenre + merch + lifestyle + niche)",
+    
+  "caption_b": "DARK POETRY TONE.\\nSame AIDA structure but poetic and existential.\\nEx: 'Some are born to wear the night.'\\nSame CTA rules apply.",
+    
+  "pinterest": "3-4 sentences. SEO focused. Embed 'alternative metal clothing', 'gothic band tshirt gift for him', 'heavy metal fashion aesthetic', 'dark aesthetic clothing' naturally. Last sentence: 'Shop the Deathlipse collection on Etsy.' No hashtags.",
+    
+  "etsy_title": "Max 140 chars. Strongest SEO words front. 3-4 keyword clusters split by |.",
+    
+  "etsy_tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10", "tag11", "tag12", "tag13"],
+    
+  "etsy_description": "First 160 chars for Google snippet (most important info). Total 150-200 words. SEO focused but readable."
+}}
+"""
+    for attempt in range(3):
         try:
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [{"role": "user", "content": prompt_text}],
-                    "temperature": 0.9,
-                    "max_tokens": 300,
-                },
-                timeout=30,
-            )
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {NVIDIA_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "meta/llama-3.1-70b-instruct",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a senior marketing director for an underground metal brand. You only output strict, minified JSON."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1500
+            }
+            
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            
             if resp.status_code == 200:
-                return resp.json()["choices"][0]["message"]["content"].strip()
+                response_text = resp.json()["choices"][0]["message"]["content"]
+                
+                # Clean markdown backticks
+                if "```json" in response_text:
+                    response_text = response_text.split("```json")[1]
+                if "```" in response_text:
+                    response_text = response_text.split("```")[0]
+                    
+                data = json.loads(response_text.strip(), strict=False)
+                return data
             else:
-                print(f"  Groq hata {resp.status_code}: {resp.text[:100]}")
+                print(f"NVIDIA API Error: {resp.status_code} - {resp.text}")
+                
         except Exception as e:
-            print(f"  Groq baglanti hata: {e}")
+            print(f"API Error on attempt {attempt+1}: {e}")
+            
+    print("All attempts failed. Returning fallback.")
+    return generate_fallback(product_title)
 
-    # --- GEMINI (Yedek) ---
-    if GEMINI_API_KEY and "BURAYA" not in GEMINI_API_KEY:
-        try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            r = client.models.generate_content(
-                model="gemini-2.0-flash", contents=prompt_text
-            )
-            return r.text.strip()
-        except Exception as e:
-            print(f"  Gemini hata: {e}")
-
-    # --- Son care: hazir prompt ---
-    return None
-
-
-def generate_video_prompt(product_title, product_type="t-shirt"):
-    """
-    Urun icin sinematik, metal estetiginde AI video promptu uret.
-    Kling AI, fal.ai ve wavespeed.ai ile uyumlu format.
-    """
-    style_variants = [
-        "black metal / dark forest aesthetic",
-        "industrial metal / dystopian forge aesthetic",
-        "death metal / occult dark altar aesthetic",
-        "doom metal / slow cinematic dread aesthetic",
-        "thrash metal / underground gritty rawness aesthetic",
-    ]
-    camera_moves = [
-        "slow dolly-in from behind",
-        "low-angle sweeping crane shot upward",
-        "handheld push-in circling the subject",
-        "extreme macro pull-back reveal",
-        "slow orbit 180 degrees around subject",
-    ]
-
-    chosen_style = random.choice(style_variants)
-    chosen_camera = random.choice(camera_moves)
-
-    prompt_text = f"""You are a cinematic director for a dark heavy metal merchandise brand called DEATHLIPSE.
-
-Create a short AI video generation prompt for this product:
-- Product: {product_title}
-- Type: {product_type}
-- Style: {chosen_style}
-- Camera: {chosen_camera}
-
-STRICT RULES:
-1. The {product_type} must be the VISUAL CENTERPIECE - clearly visible
-2. Atmosphere: dark, raw, authentic - NOT commercial or glossy
-3. Include: specific lighting (practical/chiaroscuro/moody), atmosphere (smoke/embers/rain/mist), film texture (35mm grain)
-4. 9:16 vertical format, 5-7 seconds
-5. DO NOT use: white background, studio, 360 spin, CGI look
-6. USE: handheld texture, natural imperfections, organic movement
-
-Return ONLY the prompt text. No intro. Max 100 words."""
-
-    result = _call_llm(prompt_text)
-
-    if result:
-        return result
-
-    # Fallback — LLM yoksa hazir prompt
-    fallbacks = [
-        (f"Cinematic slow reveal of a {product_type} with dark metal graphic. "
-         f"Emerges from thick black smoke in stone underground chamber. "
-         f"Low-angle handheld shot, chiaroscuro lighting — cold blue above, deep crimson below. "
-         f"Embers drift upward. 35mm film grain, gothic heavy metal aesthetic. 9:16 vertical."),
-        (f"A {product_type} rests on rain-soaked cobblestones under a single harsh streetlight at night. "
-         f"Slow push-in from extreme close-up of fabric texture to full reveal. "
-         f"Fog rolls in from behind. Desaturated, high contrast, gritty underground metal feel. "
-         f"Handheld shake, 35mm grain. 9:16 vertical."),
-        (f"Extreme macro shot of {product_type} design detail, camera pulls back slowly "
-         f"revealing full garment floating in swirling black smoke and red ember sparks. "
-         f"Industrial forge background, molten metal glow, harsh shadows. "
-         f"Cinematic, dark, powerful. 9:16 vertical format."),
-    ]
-    return random.choice(fallbacks)
-
-
-def generate_caption(product_title, product_type, price):
-    """
-    Instagram ve TikTok icin metal estetiginde caption uret.
-    Satin alma yonelimli ama satici hissettirmeyen, otantik ton.
-    """
-    tone_variants = [
-        "dark poetry / existential — speak to the void",
-        "aggressive / battle-cry — for the warriors",
-        "underground identity / us vs them — true metal only",
-        "ritual / occult — ancient and sacred",
-        "raw authenticity / anti-mainstream — real over commercial",
-    ]
-    chosen_tone = random.choice(tone_variants)
-
-    prompt_text = f"""You are the voice behind DEATHLIPSE, a metal merchandise brand for true underground metal fans.
-
-Write an Instagram/TikTok caption for:
-- Product: {product_title}
-- Type: {product_type}
-- Price: ${price:.2f}
-- Tone: {chosen_tone}
-
-RULES:
-1. 3-4 lines MAX. Short. Punchy. Powerful.
-2. Line 1: Emotional hook — pure feeling, NO product name
-3. Line 2: Subtle lifestyle connection or identity statement
-4. Line 3: Simple CTA like "Shop link in bio 🔗" or "Link in bio. You know what to do."
-5. Then blank line, then 18-20 hashtags (metal subgenres + merch + lifestyle + niche community)
-6. MAX 2 emojis total. Sound like a metalhead, NOT a marketer.
-
-Return ONLY caption + hashtags. Nothing else."""
-
-    result = _call_llm(prompt_text)
-
-    if result:
-        return result
-
-    # Fallback captions
-    fallbacks = [
-        (f"Not merch. A statement.\n"
-         f"This is what you wear when you've stopped pretending.\n"
-         f"Link in bio. You know what to do. 🔗\n\n"
-         f"#MetalMerch #HeavyMetal #MetalHead #BlackMetal #DeathMetal #ThrashMetal "
-         f"#MetalFashion #MetalWear #UndergroundMetal #MetalCommunity #MetalLifestyle "
-         f"#DarkAesthetic #MetalShirt #MetalHoodie #EtsyMetal #MetalGifts "
-         f"#GothicFashion #MetalScene #TrueHeavyMetal #MetalClothing"),
-        (f"Forged. Not manufactured.\n"
-         f"Some wear it. Others earn it.\n"
-         f"Shop link in bio 🔗\n\n"
-         f"#MetalMerch #UndergroundMetal #HeavyMetal #MetalHead #BlackMetal "
-         f"#DeathMetal #MetalWear #MetalCommunity #DarkFashion #MetalLifestyle "
-         f"#MetalShirt #MetalHoodie #EtsySeller #MetalGear #GothicStyle "
-         f"#MetalScene #MetalArt #TrueHeavyMetal #MetalBand #MetalDesign"),
-    ]
-    return random.choice(fallbacks)
-
-
-def test_generators():
-    """API baglantisini ve uretimi test et"""
-    import sys
-    # Windows terminal encoding duzelt
-    if sys.stdout.encoding != "utf-8":
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-    print("LLM API test ediliyor...\n")
-
-    test_products = [
-        ("Rammstein Metal Band T-Shirt | Concert Merch", "t-shirt", 24.99),
-        ("Rammstein Collage Hoodie | Gothic Red-Black", "hoodie", 54.99),
-        ("Gojira Forditude Heavy Blend Hoodie", "hoodie", 49.99),
-    ]
-
-    for title, ptype, price in test_products:
-        print("=" * 60)
-        print(f"URUN: {title[:55]}")
-        print("=" * 60)
-        print("\n[VIDEO PROMPTU]")
-        prompt = generate_video_prompt(title, ptype)
-        print(prompt.encode("utf-8", errors="replace").decode("utf-8"))
-        print("\n[CAPTION]")
-        caption = generate_caption(title, ptype, price)
-        print(caption.encode("utf-8", errors="replace").decode("utf-8"))
-        print()
-
+def generate_fallback(product_title):
+    return {
+        "hook": "Embrace the Darkness",
+        "caption_a": f"Unleash the darkness. Wear the night.\n\nEmbrace your metal aesthetic with the {product_title}.\nUnderground exclusive. Link in bio. 🖤\n\n#heavymetal #metalhead #deathmetal #blackmetal #goth #metalmerch #altfashion",
+        "caption_b": f"Some are born to wear the night.\n\nLet the {product_title} speak for your soul.\nUnderground exclusive. Link in bio. 🖤\n\n#darkaesthetic #gothfashion",
+        "pinterest": f"Discover the {product_title} from Deathlipse. Perfect for your dark aesthetic and heavy metal wardrobe. High-quality alternative clothing and goth fashion. Shop the Deathlipse collection on Etsy.",
+        "etsy_title": f"{product_title} | Gothic Clothing | Heavy Metal Merch | Alt Fashion",
+        "etsy_tags": ["heavy metal", "goth clothing", "alt fashion", "metalhead gift", "dark aesthetic", "band merch", "punk rock", "grunge", "emo", "skater", "streetwear", "underground", "macabre"],
+        "etsy_description": f"The ultimate {product_title} for those who walk in the shadows. Made with premium materials for maximum comfort and darkness. Shop now."
+    }
 
 if __name__ == "__main__":
-    test_generators()
+    # Test
+    print(json.dumps(generate_social_caption("Motorhead Skull Hoodie", "$45.00"), indent=2))
