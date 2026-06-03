@@ -11,9 +11,9 @@ import moviepy.audio.fx.all as afx
 # GÖRSEL EFEKTLER (OPENCV)
 # ==========================================
 def apply_scanlines(frame, intensity=30):
-    overlay = frame.copy()
-    overlay[::2, :] = np.clip(overlay[::2, :] - intensity, 0, 255)
-    return overlay
+    overlay = frame.copy().astype(np.int16)
+    overlay[::2, :] -= intensity
+    return np.clip(overlay, 0, 255).astype(np.uint8)
 
 def apply_rgb_shift(frame, shift_x=10, shift_y=5):
     h, w, _ = frame.shape
@@ -245,12 +245,7 @@ def generate_tiktok_video(image_path, output_path, hook_text="", product_type="d
         prod_interp = cv2.INTER_AREA if current_pw < pw else cv2.INTER_CUBIC
         resized_prod = cv2.resize(prod_img, (current_pw, current_ph), interpolation=prod_interp)
         
-        # Paste product with OpenCV Alpha Blending
-        px = (w - current_pw) // 2
-        py = (h - current_ph) // 2
-        frame_cv = overlay_image_alpha(frame_cv, resized_prod, px, py)
-        
-        # OpenCV Effects
+        # OpenCV Background Effects
         if style == "dark_glitch":
             frame_cv = apply_vignette(frame_cv, 1.2)
             frame_cv = apply_scanlines(frame_cv, 20)
@@ -263,13 +258,6 @@ def generate_tiktok_video(image_path, output_path, hook_text="", product_type="d
                 frame_cv = apply_flash(frame_cv, 60)
                 frame_cv = apply_rgb_shift(frame_cv, 5, 0)
                 
-        elif style == "cinematic_fade":
-            fade_in = min(1.0, i / 30.0)
-            fade_out = min(1.0, (total_frames - i) / 30.0)
-            opacity = min(fade_in, fade_out)
-            frame_cv = cv2.convertScaleAbs(frame_cv, alpha=opacity, beta=0)
-            frame_cv = apply_vignette(frame_cv, 1.5)
-            
         elif style == "blood_drip":
             frame_cv = apply_vignette(frame_cv, 1.4)
             frame_cv = apply_blood_drip(frame_cv, i)
@@ -281,6 +269,19 @@ def generate_tiktok_video(image_path, output_path, hook_text="", product_type="d
                 
         elif style == "clean_minimal":
             pass # No heavy effects
+            
+        # Paste product with OpenCV Alpha Blending (AFTER background effects so product stays clean)
+        px = (w - current_pw) // 2
+        py = (h - current_ph) // 2
+        frame_cv = overlay_image_alpha(frame_cv, resized_prod, px, py)
+        
+        # Whole-frame effects (like fade in/out)
+        if style == "cinematic_fade":
+            fade_in = min(1.0, i / 30.0)
+            fade_out = min(1.0, (total_frames - i) / 30.0)
+            opacity = min(fade_in, fade_out)
+            frame_cv = cv2.convertScaleAbs(frame_cv, alpha=opacity, beta=0)
+            frame_cv = apply_vignette(frame_cv, 1.5)
             
         # Renk uzayı hatasını (Mora/Maviye kayma) önlemek için MoviePy'a gitmeden önce BGR -> RGB çevrimi!
         frame_rgb = cv2.cvtColor(frame_cv, cv2.COLOR_BGR2RGB)
@@ -308,10 +309,10 @@ def generate_tiktok_video(image_path, output_path, hook_text="", product_type="d
         "clean_minimal": "mid_tempo"
     }
     audio_cat = audio_map.get(style, "mid_tempo")
-    audio_files = glob.glob(f"assets/audio/{audio_cat}/*.mp3") + glob.glob(f"assets/audio/{audio_cat}/*.wav")
+    audio_files = glob.glob(f"assets/audio/{audio_cat}/*.mp3") + glob.glob(f"assets/audio/{audio_cat}/*.wav") + glob.glob(f"assets/audio/{audio_cat}/*.webm") + glob.glob(f"assets/audio/{audio_cat}/*.m4a")
     
     if not audio_files:
-        audio_files = glob.glob("assets/audio/*/*.mp3")
+        audio_files = glob.glob("assets/audio/*/*.mp3") + glob.glob("assets/audio/*/*.wav") + glob.glob("assets/audio/*/*.webm") + glob.glob("assets/audio/*/*.m4a")
         
     if audio_files:
         selected_audio = random.choice(audio_files)
@@ -333,7 +334,9 @@ def generate_tiktok_video(image_path, output_path, hook_text="", product_type="d
     else:
         print(f"[{os.path.basename(image_path)}] WARNING: No audio found. Silent video.")
     
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    dir_name = os.path.dirname(output_path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
     clip.write_videofile(output_path, codec="libx264", audio_codec="aac", bitrate="8000k", logger=None)
     print(f"[{os.path.basename(image_path)}] Success! Saved to {output_path}")
     return True

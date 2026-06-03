@@ -11,25 +11,12 @@ import time
 from rembg import remove
 import video_generator
 from prompt_generator import generate_social_caption
-
-load_dotenv()
-PRINTIFY_TOKEN = os.getenv("PRINTIFY_TOKEN")
-SHOP_ID = os.getenv("PRINTIFY_SHOP_ID", "14366005")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-HEADERS = {
-    "Authorization": f"Bearer {PRINTIFY_TOKEN}",
-    "Content-Type": "application/json"
-}
+import etsy_fetcher
 
 os.makedirs("bulk_images", exist_ok=True)
 
 def get_all_products():
-    url = f"https://api.printify.com/v1/shops/{SHOP_ID}/products.json"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        return response.json().get("data", [])
-    return []
+    return etsy_fetcher.get_all_products()
 
 def extract_raw_design_url(product):
     # Printify ürünündeki ilk baskı alanının görselini bul
@@ -117,9 +104,11 @@ def composite_design_on_model(model_bytes, design_bytes, output_filename):
         return False
 
 
-def main(batch_limit=1):
+def main(batch_limit=1, force_id=None):
     print(f"Starting Bulk Content Generator (Limit: {batch_limit})...")
     products = get_all_products()
+    if force_id:
+        products = [p for p in products if str(p.get("id")) == str(force_id)]
     if not products:
         print("No products found.")
         return
@@ -157,7 +146,7 @@ def main(batch_limit=1):
             print(f"\n[{idx+1}/{len(products)}] Processing: {product.get('title')}")
             
             product_id = product["id"]
-            if product_id in processed_ids or product_id in posted_products:
+            if (str(product_id) in processed_ids or str(product_id) in posted_products) and str(product_id) != str(force_id):
                 print("-> Already processed, skipping.")
                 continue
                 
@@ -169,32 +158,16 @@ def main(batch_limit=1):
                 print("-> Product is blacklisted (deleted on store), skipping.")
                 continue
                 
-            # GÜNCELLİK KONTROLLERİ:
-            # 1. Ürün Printify üzerinde gizlenmiş veya yayından kaldırılmış mı?
-            if not product.get("visible", True):
-                print("-> Product is not visible/published, skipping.")
-                continue
-                
-            # 2. Ürün aktif bir mağazaya (Etsy vb.) bağlı mı?
-            if not product.get("external"):
-                print("-> Product is a draft (not connected to Etsy), skipping.")
-                continue
-            
-            # Printify'daki default mockup görselini bul
+            # Etsy API'den gelen resim modelini al
             images = product.get("images", [])
             mockup_url = None
-            for img in images:
-                if img.get("is_default", False):
-                    mockup_url = img.get("src")
-                    break
+            if images:
+                mockup_url = images[0].get("src")
             
             clean_title = product.get("title", "").replace(".", "")
-            if "hoodie" not in clean_title.lower() and "t-shirt" not in clean_title.lower() and "tshirt" not in clean_title.lower():
+            if "hoodie" not in clean_title.lower() and "t-shirt" not in clean_title.lower() and "tshirt" not in clean_title.lower() and "sweatshirt" not in clean_title.lower():
                 print(f"-> Skipping non-apparel product: {clean_title}")
                 continue
-
-            if not mockup_url and images:
-                mockup_url = images[0].get("src")
                 
             if not mockup_url:
                 print("-> No product mockup image found, skipping.")
@@ -238,7 +211,7 @@ def main(batch_limit=1):
             video_path = f"reels_output/{video_filename}"
             video_generator.generate_tiktok_video(f"bulk_images/{filename}", video_path, hook_text=hook_text, product_type=product_type)
             
-            product_url = f"https://www.etsy.com/shop/Deathlipse"
+            product_url = product.get("url", "https://www.etsy.com/shop/Deathlipse")
             
             # JSON'ı encode edip CSV'ye yazalım, telegram_bot.py oradan okusun
             social_json_str = json.dumps(social_data)
@@ -266,6 +239,7 @@ def main(batch_limit=1):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate bulk content for Deathlipse Bot")
     parser.add_argument("--batch", type=int, default=1, help="Number of products to generate (default: 1)")
+    parser.add_argument("--force-id", type=str, default=None, help="Force processing a specific product ID")
     args = parser.parse_args()
     
     # Check if limit is specified in env, args override env
@@ -274,4 +248,4 @@ if __name__ == "__main__":
     if env_limit and batch_limit == 1:
         batch_limit = int(env_limit)
         
-    main(batch_limit)
+    main(batch_limit, force_id=args.force_id)

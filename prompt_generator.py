@@ -5,10 +5,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-
 def generate_social_caption(product_title, price=""):
     """
-    Groq kullanarak Instagram, Pinterest, TikTok ve Etsy için gerekli
+    NVIDIA API kullanarak Instagram, Pinterest, TikTok ve Etsy için gerekli
     tüm SEO, açıklama ve AIDA formatındaki metinleri tek seferde JSON üretir.
     """
     if not NVIDIA_API_KEY:
@@ -16,7 +15,7 @@ def generate_social_caption(product_title, price=""):
         return generate_fallback(product_title)
         
     prompt = f"""
-Sen Deathlipse'in pazarlama direktörüsün. 
+Sen Deathlipse'in pazarlama direktörü ve Baş SEO Uzmanısın.
 Underground heavy metal apparel markası.
 Ürün: {product_title}, Fiyat: {price}
 
@@ -25,6 +24,8 @@ SADECE geçerli bir JSON formatında metin döndür, markdown veya başka açık
 Yasaklı ifadeler: "Sınırlı sayıda üretildi", "Son X adet kaldı".
 İzin verilen ifadeler: "Underground exclusive", "Not for everyone", "For the select few", "Limited drop".
 CRITICAL REQUIREMENT: The entire output (all values in the JSON) MUST BE STRICTLY IN ENGLISH. The target audience is the USA. Do NOT output any Turkish words in the JSON values.
+HASHTAG REQUIREMENT: Do NOT include spaces inside hashtags (e.g., use #HeavyMetal instead of #Heavy Metal or # HeavyMetal). Tags MUST be a single word without spaces.
+SEO REQUIREMENT: Use TOP-TIER Etsy SEO practices for the USA market. Use highly searched long-tail keywords (e.g., 'goth aesthetic clothing', 'heavy metal band merch gift', 'alt streetwear'). Maximize keyword clustering.
 
 {{
   "hook": "3-4 words video hook. Directly address the metalhead identity. Use strong verbs.",
@@ -35,11 +36,11 @@ CRITICAL REQUIREMENT: The entire output (all values in the JSON) MUST BE STRICTL
     
   "pinterest": "3-4 sentences. SEO focused. Embed 'alternative metal clothing', 'gothic band tshirt gift for him', 'heavy metal fashion aesthetic', 'dark aesthetic clothing' naturally. Last sentence: 'Shop the Deathlipse collection on Etsy.' No hashtags.",
     
-  "etsy_title": "Max 140 chars. Strongest SEO words front. 3-4 keyword clusters split by |.",
+  "etsy_title": "Max 140 chars. SUPER OPTIMIZED USA SEO. Place exact match highest-volume keywords at the very front. 3-4 keyword clusters split by |. Example: Heavy Metal Hoodie | Goth Streetwear Sweatshirt | Dark Aesthetic Alt Clothing | Gift for Metalhead",
     
-  "etsy_tags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9", "tag10", "tag11", "tag12", "tag13"],
+  "etsy_tags": ["heavy metal hoodie", "goth streetwear", "dark aesthetic", "metalhead gift", "alt fashion", "macabre clothing", "punk rock shirt", "grunge aesthetic", "emo sweatshirt", "skater apparel", "y2k grunge", "occult clothing", "band merch style"],
     
-  "etsy_description": "First 160 chars for Google snippet (most important info). Total 150-200 words. SEO focused but readable."
+  "etsy_description": "First 160 chars for Google snippet (most important info). Total 150-200 words. Highly persuasive sales copy integrating USA SEO keywords naturally. Focus on quality, fit, and aesthetic."
 }}
 """
     for attempt in range(3):
@@ -50,7 +51,7 @@ CRITICAL REQUIREMENT: The entire output (all values in the JSON) MUST BE STRICTL
                 "Content-Type": "application/json"
             }
             payload = {
-                "model": "Llama-4 Maverick",
+                "model": "mistralai/mistral-large-3-675b-instruct-2512",
                 "messages": [
                     {
                         "role": "system",

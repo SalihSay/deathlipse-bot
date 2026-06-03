@@ -407,31 +407,49 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tiktok_config = [{"platform": "tiktok", "accountId": ZERNIO_TIKTOK_ACCOUNT_ID}]
         pinterest_config = [{"platform": "pinterest", "accountId": ZERNIO_PINTEREST_ACCOUNT_ID}]
         
-        t_res = post_to_zernio(caption, vid_file, tiktok_config, "video")
+        try:
+            t_res = post_to_zernio(caption, vid_file, tiktok_config, "video")
+        except Exception as e:
+            print(f"Zernio TikTok fail: {e}")
+            t_res = False
         
         # Fallback to standard caption if Pinterest text is missing
         p_caption = row[1] if len(row) > 1 and row[1].strip() else caption
-        p_res = post_to_zernio(p_caption, img_file, pinterest_config, "image")
+        try:
+            p_res = post_to_zernio(p_caption, img_file, pinterest_config, "image")
+        except Exception as e:
+            print(f"Zernio Pinterest fail: {e}")
+            p_res = False
         
         # Meta Reels
-        meta_reels_res = await post_video_to_meta_graph_reels(vid_file, caption)
+        meta_reels_res = False
+        try:
+            meta_reels_res = await post_video_to_meta_graph_reels(vid_file, caption)
+        except Exception as e:
+            print(f"Meta Reels fail: {e}")
         
         # YouTube Shorts
-        yt_title = social_data.get("etsy_title", "Deathlipse 🖤") if isinstance(social_data, dict) else "Deathlipse 🖤"
-        yt_desc = caption
-        yt_tags_raw = social_data.get("etsy_tags", "metal,goth,streetwear") if isinstance(social_data, dict) else "metal,goth"
-        if isinstance(yt_tags_raw, str):
-            yt_tags = [t.strip() for t in yt_tags_raw.split(",") if t.strip()]
-        else:
-            yt_tags = yt_tags_raw
-        
-        # Run youtube upload in a separate thread/executor if we don't want to block, 
-        # but for simplicity we will just call it synchronously
-        print("Uploading to YouTube Shorts...")
-        yt_res = youtube_uploader.upload_video_to_shorts(vid_file, yt_title, yt_desc, yt_tags)
+        yt_res = False
+        try:
+            yt_title = social_data.get("etsy_title", "Deathlipse 🖤") if isinstance(social_data, dict) else "Deathlipse 🖤"
+            yt_desc = caption
+            yt_tags_raw = social_data.get("etsy_tags", "metal,goth,streetwear") if isinstance(social_data, dict) else "metal,goth"
+            if isinstance(yt_tags_raw, str):
+                yt_tags = [t.strip() for t in yt_tags_raw.split(",") if t.strip()]
+            else:
+                yt_tags = yt_tags_raw
+            
+            print("Uploading to YouTube Shorts...")
+            yt_res = youtube_uploader.upload_video_to_shorts(vid_file, yt_title, yt_desc, yt_tags)
+        except Exception as e:
+            print(f"YouTube Shorts fail: {e}")
         
         # Threads
-        threads_res = post_to_threads(img_file, caption, product_url)
+        threads_res = False
+        try:
+            threads_res = post_to_threads(img_file, caption, product_url)
+        except Exception as e:
+            print(f"Threads fail: {e}")
         
         # Story
         story_res = False
@@ -462,8 +480,34 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(res_msg)
 
+async def run_generator_job(context: ContextTypes.DEFAULT_TYPE):
+    print("Running daily bulk content generator...")
+    proc = await asyncio.create_subprocess_exec(
+        "python", "bulk_content_generator.py", "--batch", "1",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    print(f"Generator finished with code {proc.returncode}")
+    await check_for_posts(context)
+
+async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
+    row, index = get_next_pending_post()
+    if not row:
+        return
+        
+    msg = "⚠️ *Önemli Hatırlatma!*\n\nBugünkü gönderiyi hala onaylamadınız. Gönderinin zamanında yayınlanması için yukarıdaki mesajdan onaylamayı unutmayın!"
+    try:
+        await context.bot.send_message(
+            chat_id=TELEGRAM_GROUP_ID, 
+            text=msg, 
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        print(f"Failed to send reminder: {e}")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Deathlipse Otomasyon Hub'ı Aktif! Günde 1 kez onay postu atacak.")
+    await update.message.reply_text("Deathlipse Otomasyon Hub'ı Aktif! Her gün yeni post üretilecek ve onay bekleyecek.")
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Manuel test tetiklendi, sıradaki gönderi aranıyor...")
@@ -478,14 +522,23 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     
     job_queue = application.job_queue
-    # TR Saati (UTC+3) -> 09:00 TR == 06:00 UTC
-    target_time = dt_time(hour=6, minute=0, tzinfo=timezone.utc)
     
-    # Schedule daily
-    job_queue.run_daily(check_for_posts, target_time)
+    # 07:00 UTC = 10:00 TR Time -> Her gün saat 10:00'da post üretimi başlar
+    target_time_gen = dt_time(hour=7, minute=0, tzinfo=timezone.utc)
+    job_queue.run_daily(run_generator_job, target_time_gen)
     
-    # Check token expiry daily
-    job_queue.run_daily(check_token_expiry, target_time)
+    # Hatırlatıcılar (TR: 12:00, 15:00, 18:00, 21:00) (UTC: 09:00, 12:00, 15:00, 18:00)
+    reminders_utc = [
+        dt_time(hour=9, minute=0, tzinfo=timezone.utc),
+        dt_time(hour=12, minute=0, tzinfo=timezone.utc),
+        dt_time(hour=15, minute=0, tzinfo=timezone.utc),
+        dt_time(hour=18, minute=0, tzinfo=timezone.utc),
+    ]
+    for r_time in reminders_utc:
+        job_queue.run_daily(reminder_job, r_time)
+    
+    # Check token expiry daily at 06:00 UTC
+    job_queue.run_daily(check_token_expiry, dt_time(hour=6, minute=0, tzinfo=timezone.utc))
     
     application.run_polling(drop_pending_updates=True)
 
