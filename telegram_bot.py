@@ -507,11 +507,35 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
         print(f"Failed to send reminder: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Deathlipse Otomasyon Hub'ı Aktif! Her gün yeni post üretilecek ve onay bekleyecek.")
+    await update.message.reply_text("Deathlipse Otomasyon Hub'ı Aktif! Her gün yeni post üretilecek ve onay bekleyecek.\nKomutlar:\n/test - Sıradaki bekleyen gönderiyi getirir\n/skip_current - Bekleyen gönderiyi atlar\n/status - Kuyruk durumunu gösterir")
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Manuel test tetiklendi, sıradaki gönderi aranıyor...")
     await check_for_posts(context)
+
+async def skip_current_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    row, index = get_next_pending_post()
+    if not row:
+        await update.message.reply_text("Şu anda bekleyen (PENDING) hiçbir gönderi yok.")
+        return
+    prod_id = row[2].replace("post_", "").replace(".jpg", "").replace(".png", "")
+    update_status(index, "SKIPPED", prod_id)
+    await update.message.reply_text(f"✅ {prod_id} ID'li gönderi başarıyla atlandı! Sıradaki ürünü görmek için /test yazabilirsiniz.")
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.isfile(CSV_FILE):
+        await update.message.reply_text("CSV dosyası bulunamadı.")
+        return
+    
+    pending_count = 0
+    with open(CSV_FILE, "r", encoding="utf-8") as f:
+        reader = list(csv.reader(f))
+        for i in range(1, len(reader)):
+            row = reader[i]
+            if len(row) >= 6 and row[5] == "PENDING":
+                pending_count += 1
+                
+    await update.message.reply_text(f"📊 Kuyruk Durumu:\nŞu anda onay bekleyen {pending_count} adet gönderi var.")
 
 def main():
     print("Starting Deathlipse Telegram Bot...")
@@ -519,6 +543,8 @@ def main():
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test", test_command))
+    application.add_handler(CommandHandler("skip_current", skip_current_command))
+    application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CallbackQueryHandler(button_callback))
     
     job_queue = application.job_queue
