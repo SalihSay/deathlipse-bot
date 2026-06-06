@@ -13,3 +13,11 @@ oracle_key.pem
 test_qwen_nvidia.py
 client_secrets.json
 token.json
+
+etsy_token.json
+remote.env
+etsy_listings_raw.json
+generator_test_output*.txt
+assets/posted_products.json
+assets/images/
+*.mp4

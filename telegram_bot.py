@@ -27,17 +27,19 @@ META_IG_USER_ID = os.getenv("META_IG_USER_ID", "")
 CSV_FILE = "bulk_schedule.csv"
 POSTED_JSON = "assets/posted_products.json"
 
-def upload_to_catbox(file_path):
-    print(f"Uploading to catbox.moe: {file_path}")
-    url = "https://catbox.moe/user/api.php"
+def upload_to_tmpfiles(file_path):
+    print(f"Uploading to tmpfiles.org: {file_path}")
+    url = "https://tmpfiles.org/api/v1/upload"
     with open(file_path, "rb") as f:
-        files = {"fileToUpload": f}
-        data = {"reqtype": "fileupload"}
+        files = {"file": f}
         try:
-            resp = requests.post(url, data=data, files=files)
-            if resp.status_code == 200 and resp.text.startswith("https://files.catbox.moe/"):
-                return resp.text.strip()
-            print(f"Upload failed. Response: {resp.text}")
+            resp = requests.post(url, files=files)
+            data = resp.json()
+            if data.get("status") == "success":
+                file_url = data["data"]["url"]
+                direct_url = file_url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
+                return direct_url
+            print(f"Upload failed. Response: {data}")
         except Exception as e:
             print("Upload exception:", e)
     return None
@@ -47,7 +49,7 @@ def post_to_meta_graph(story_image_path, product_url):
         print("[!] Meta API tokens missing.")
         return False
         
-    image_url = upload_to_catbox(story_image_path)
+    image_url = upload_to_tmpfiles(story_image_path)
     if not image_url:
         return False
         
@@ -95,7 +97,7 @@ async def post_video_to_meta_graph_reels(video_path, caption):
         print("[!] Meta API tokens missing for Reels.")
         return False
         
-    video_url = upload_to_catbox(video_path)
+    video_url = upload_to_tmpfiles(video_path)
     if not video_url:
         return False
         
@@ -105,6 +107,7 @@ async def post_video_to_meta_graph_reels(video_path, caption):
         "media_type": "REELS",
         "video_url": video_url,
         "caption": caption,
+        "share_to_feed": "true",
         "access_token": META_ACCESS_TOKEN
     }
     
@@ -119,7 +122,7 @@ async def post_video_to_meta_graph_reels(video_path, caption):
         
         # Polling for processing completion
         status_url = f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={META_ACCESS_TOKEN}"
-        for _ in range(12):  # Max 60 seconds
+        for _ in range(24):  # Max 240 seconds
             status_resp = requests.get(status_url)
             status_data = status_resp.json()
             if status_data.get("status_code") == "FINISHED":
@@ -127,7 +130,7 @@ async def post_video_to_meta_graph_reels(video_path, caption):
             elif status_data.get("status_code") == "ERROR":
                 print(f"Reels processing error: {status_data}")
                 return False
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
             
         # Publish
         publish_url = f"https://graph.facebook.com/v19.0/{META_IG_USER_ID}/media_publish"
@@ -152,7 +155,7 @@ def post_to_threads(image_path, caption, product_url):
         print("[!] Meta API tokens missing for Threads.")
         return False
         
-    image_url = upload_to_catbox(image_path)
+    image_url = upload_to_tmpfiles(image_path)
     if not image_url:
         return False
         
@@ -198,7 +201,7 @@ def post_to_zernio(text, media_path, platforms_config, media_type="video"):
     if not ZERNIO_API_KEY:
         return False
         
-    media_url = upload_to_catbox(media_path)
+    media_url = upload_to_tmpfiles(media_path)
     if not media_url:
         return False
         
@@ -470,12 +473,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_status(index, "PUBLISHED", prod_id)
         
         res_msg = "📊 YAYIN SONUÇLARI:\n"
-        res_msg += f"✅ TikTok Reel: {'Yayınlandı' if t_res else 'Başarısız'}\n"
-        res_msg += f"✅ Pinterest: {'Yayınlandı' if p_res else 'Başarısız'}\n"
-        res_msg += f"✅ Instagram Reel: {'Yayınlandı' if meta_reels_res else 'Başarısız'}\n"
-        res_msg += f"✅ Instagram Story: {'Yayınlandı' if story_res else 'Başarısız'}\n"
-        res_msg += f"✅ Threads: {'Yayınlandı' if threads_res else 'Başarısız'}\n"
-        res_msg += f"✅ YouTube Shorts: {'Yayınlandı' if yt_res else 'Başarısız'}\n\n"
+        res_msg += f"{'✅' if t_res else '❌'} TikTok Reel: {'Yayınlandı' if t_res else 'Başarısız'}\n"
+        res_msg += f"{'✅' if p_res else '❌'} Pinterest: {'Yayınlandı' if p_res else 'Başarısız'}\n"
+        res_msg += f"{'✅' if meta_reels_res else '❌'} Instagram Reel: {'Yayınlandı' if meta_reels_res else 'Başarısız'}\n"
+        res_msg += f"{'✅' if story_res else '❌'} Instagram Story: {'Yayınlandı' if story_res else 'Başarısız'}\n"
+        res_msg += f"{'✅' if threads_res else '❌'} Threads: {'Yayınlandı' if threads_res else 'Başarısız'}\n"
+        res_msg += f"{'✅' if yt_res else '❌'} YouTube Shorts: {'Yayınlandı' if yt_res else 'Başarısız'}\n\n"
         res_msg += f"🔗 Etsy: {product_url}"
         
         await query.edit_message_text(res_msg)
