@@ -8,7 +8,7 @@ from bot.approval import check_for_posts, get_next_pending_post
 async def run_generator_job(context: ContextTypes.DEFAULT_TYPE):
     print("Running daily bulk content generator...")
     proc = await asyncio.create_subprocess_exec(
-        "python", "bulk_content_generator.py",  "--batch", "1",
+        "python", "scripts/bulk_content_generator.py",  "--batch", "1",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
