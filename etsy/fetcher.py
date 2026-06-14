@@ -2,14 +2,8 @@ import os
 import requests
 import json
 from pathlib import Path
-from dotenv import load_dotenv
+from core.config import ETSY_API_KEY, ETSY_SHARED_SECRET, ETSY_SHOP_ID, ETSY_ACCESS_TOKEN
 
-load_dotenv()
-
-ETSY_API_KEY = os.getenv("ETSY_API_KEY")
-ETSY_SHARED_SECRET = os.getenv("ETSY_SHARED_SECRET")
-SHOP_ID = os.getenv("ETSY_SHOP_ID")
-ETSY_ACCESS_TOKEN = os.getenv("ETSY_ACCESS_TOKEN")  # Guncelleme islemleri (PUT) icin gereklidir
 
 def get_headers(use_oauth=False):
     headers = {
@@ -27,7 +21,7 @@ def get_all_products():
     offset = 0
     
     while True:
-        url = f"https://openapi.etsy.com/v3/application/shops/{SHOP_ID}/listings/active?includes=Images&limit={limit}&offset={offset}"
+        url = f"https://openapi.etsy.com/v3/application/shops/{ETSY_SHOP_ID}/listings/active?includes=Images&limit={limit}&offset={offset}"
         resp = requests.get(url, headers=get_headers(), timeout=30)
         
         if resp.status_code != 200:
@@ -112,7 +106,7 @@ def update_listing(listing_id, title=None, description=None, tags=None):
     Etsy ürününün başlığını, açıklamasını ve etiketlerini günceller.
     NOT: Bu işlem için ETSY_ACCESS_TOKEN (OAuth) gerekir!
     """
-    url = f"https://openapi.etsy.com/v3/application/shops/{SHOP_ID}/listings/{listing_id}"
+    url = f"https://openapi.etsy.com/v3/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}"
     
     payload = {}
     if title:

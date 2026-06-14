@@ -1,22 +1,22 @@
 # Deathlipse Bot 🦇⚡
 
-**Full-Stack AI-Powered E-Commerce Automation System**
+**Yapay Zeka Destekli Tam Kapsamlı E-Ticaret Otomasyon Sistemi**
 
-An end-to-end autonomous content production and multi-platform publishing pipeline for the [Deathlipse](https://www.etsy.com/shop/Deathlipse) alternative/gothic fashion brand. Built with Python, running 24/7 on Oracle Cloud.
+[Deathlipse](https://www.etsy.com/shop/Deathlipse) alternatif/gotik moda markası için uçtan uca otonom içerik üretim ve çoklu platform yayın pipeline'ı. Python ile geliştirildi, Oracle Cloud üzerinde 7/24 çalışıyor.
 
 ---
 
-## Architecture Overview
+## Mimari Genel Bakış
 
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│  Etsy Store  │────▶│  Content Engine   │────▶│  Telegram Approval  │
-│  (REST API)  │     │  (AI + Render)    │     │  (Async Bot)        │
+│  Etsy Mağaza │────▶│  İçerik Motoru   │────▶│  Telegram Onay      │
+│  (REST API)  │     │  (AI + Render)    │     │  (Asenkron Bot)     │
 └──────────────┘     └──────────────────┘     └──────┬──────────────┘
-                                                      │ One-tap approve
+                                                      │ Tek dokunuşla onayla
                                               ┌───────▼───────┐
-                                              │  Multi-Platform│
-                                              │  Publisher     │
+                                              │  Çoklu Platform│
+                                              │  Yayıncı       │
                                               └───┬───┬───┬───┘
                           ┌────────┬────────┬─────┘   │   └─────┬────────┐
                           ▼        ▼        ▼         ▼         ▼        ▼
@@ -24,101 +24,116 @@ An end-to-end autonomous content production and multi-platform publishing pipeli
                        Reels      Story              Shorts
 ```
 
-## Features
+## Özellikler
 
-### 🔗 Etsy Integration & SEO Optimization
-- Programmatic product fetching via **Etsy REST API** with OAuth 2.0 (PKCE flow)
-- Batch SEO optimization of titles, descriptions, and tags for 59+ listings
-- AI-generated sales copy using **NVIDIA NIM (Mistral Large 3)** for the US market
+### 🔗 Etsy Entegrasyonu & SEO Optimizasyonu
+- **Etsy REST API** üzerinden OAuth 2.0 (PKCE akışı) ile programatik ürün çekme
+- 59+ ürün için başlık, açıklama ve etiketlerin toplu SEO optimizasyonu
+- ABD pazarı için **NVIDIA NIM (Mistral Large 3)** ile yapay zeka destekli satış metni üretimi
 
-### 🎬 Autonomous Video Production
-- AI background removal with **Rembg** (U²-Net)
-- Pixel-perfect compositing via **NumPy** matrices and **Pillow (PIL)**
-- AI-generated backgrounds using **Stable Diffusion** (no stock images)
-- High-quality music integration with **yt-dlp**
-- Cinematic video rendering with **OpenCV** and **MoviePy**
+### 🎬 Otonom Video Üretimi
+- **Rembg** (U²-Net) ile yapay zeka destekli arka plan kaldırma
+- **NumPy** matrisleri ve **Pillow (PIL)** ile piksel düzeyinde kusursuz birleştirme
+- **Stable Diffusion** ile yapay zeka tarafından üretilen arka planlar (stok görsel kullanılmadı)
+- **yt-dlp** ile yüksek kaliteli müzik entegrasyonu
+- **OpenCV** ve **MoviePy** ile sinematik video render
 
-### 🤖 Telegram Command & Control
-- Fully **async (asyncio)** architecture — never blocks during heavy renders
-- Inline keyboard approval: one tap to publish, one tap to skip
-- Real-time status reporting with per-platform success/failure indicators
+### 🤖 Telegram Komuta & Kontrol Merkezi
+- Tamamen **asenkron (asyncio)** mimari — ağır render işlemlerinde asla kilitlenmiyor
+- Satır içi klavye onayı: yayınlamak için tek dokunuş, atlamak için tek dokunuş
+- Platform bazlı başarı/başarısızlık göstergeleri ile gerçek zamanlı durum raporlama
 
-### 📡 Multi-Platform Publishing (6 Platforms)
-- **Instagram Reels** — Meta Graph API with `share_to_feed` support
+### 📡 Çoklu Platform Yayını (6 Platform)
+- **Instagram Reels** — Meta Graph API, `share_to_feed` desteği ile
 - **Instagram Stories** — Meta Graph API
-- **YouTube Shorts** — YouTube Data API v3 with auto-refresh OAuth tokens
+- **YouTube Shorts** — YouTube Data API v3, otomatik yenilenen OAuth token'lar
 - **TikTok** — Zernio API
 - **Pinterest** — Zernio API
 - **Threads** — Meta Threads API
-- Media delivery via **tmpfiles.org** CDN for cloud-to-API file transfers
+- Buluttan API'ye dosya transferi için **tmpfiles.org** CDN entegrasyonu
 
 ### ☁️ DevOps & Deployment
-- **Oracle Cloud (OCI)** — Always-free tier VM running 24/7
-- **SSH/SCP** automated deployment pipeline (`deploy.bat`)
-- **tmux** persistent process management
-- **Git/GitHub** version control with security-hardened `.gitignore`
-- **Google OAuth 2.0** in Production mode — tokens never expire
+- **Oracle Cloud (OCI)** — Her zaman ücretsiz tier VM üzerinde 7/24 çalışıyor
+- **SSH/SCP** otomatik deployment pipeline'ı (`deploy.bat`)
+- **tmux** kalıcı süreç yönetimi
+- Güvenlik odaklı `.gitignore` ile **Git/GitHub** versiyon kontrolü
+- Production modunda **Google OAuth 2.0** — token'lar asla sona ermez
 
 ---
 
-## Tech Stack
+## Teknoloji Yığını
 
-| Category | Technologies |
+| Kategori | Teknolojiler |
 |----------|-------------|
-| **Language** | Python 3.10+ |
+| **Dil** | Python 3.10+ |
 | **AI / ML** | NVIDIA NIM (Mistral Large 3), Stable Diffusion, Rembg (U²-Net) |
 | **Video** | OpenCV, MoviePy, NumPy, Pillow, yt-dlp |
-| **APIs** | Meta Graph API, YouTube Data API v3, Etsy REST API, Zernio API, Telegram Bot API |
-| **Auth** | Google OAuth 2.0, Etsy OAuth 2.0 (PKCE) |
-| **Cloud** | Oracle Cloud Infrastructure (OCI) |
+| **API'ler** | Meta Graph API, YouTube Data API v3, Etsy REST API, Zernio API, Telegram Bot API |
+| **Kimlik Doğrulama** | Google OAuth 2.0, Etsy OAuth 2.0 (PKCE) |
+| **Bulut** | Oracle Cloud Infrastructure (OCI) |
 | **DevOps** | SSH/SCP, tmux, Git/GitHub |
-| **CDN** | tmpfiles.org (cloud-to-API media relay) |
+| **CDN** | tmpfiles.org (buluttan API'ye medya aktarımı) |
 
 ---
 
-## Project Structure
+## Proje Yapısı
 
 ```
 deathlipse-bot/
-├── telegram_bot.py          # Core bot — approval flow & multi-platform publisher
-├── video_generator.py       # AI video production pipeline
-├── youtube_uploader.py      # YouTube Data API v3 integration with OAuth
-├── bulk_content_generator.py# Batch content generation for all products
-├── prompt_generator.py      # NVIDIA NIM AI prompt generation
-├── programmatic_reels.py    # Automated reels creation engine
-├── etsy_fetcher.py          # Etsy product data fetcher
-├── fetch_etsy.py            # Etsy API utilities
-├── etsy_oauth.py            # Etsy OAuth 2.0 PKCE authentication
-├── etsy_optimizer.py        # Batch SEO optimization (titles/desc/tags)
-├── etsy_optimizer_batch2.py # SEO optimization batch 2
-├── auto_optimize_all.py     # Full catalog auto-optimization
-├── download_music.py        # Royalty-free music downloader
-├── yt_reauth.py             # YouTube token re-authentication utility
-├── test_yt_refresh.py       # YouTube token health checker
-├── deploy.bat               # One-click Oracle Cloud deployment script
-├── requirements.txt         # Python dependencies
-├── .env                     # API keys & tokens (gitignored)
-├── client_secrets.json      # Google OAuth credentials (gitignored)
-├── token.json               # YouTube OAuth token (gitignored)
-├── oracle_key.pem           # SSH private key (gitignored)
-├── bulk_schedule.csv        # Content publishing schedule (gitignored)
-├── assets/
-│   ├── fonts/               # Custom typography
-│   ├── images/              # Product images (gitignored)
-│   └── posted_products.json # Publishing history (gitignored)
-├── bulk_images/             # Generated post images (gitignored)
-└── reels_output/            # Rendered video files (gitignored)
+├── main.py                       # Tek giriş noktası — Telegram botunu başlatır
+├── README.md
+├── requirements.txt
+├── .env                          # API anahtarları ve token'lar (gitignore)
+├── .gitignore
+│
+├── core/                         # Ortak altyapı modülleri
+│   ├── config.py                 # Tüm ortam değişkenleri ve sabitler
+│   └── uploader.py               # tmpfiles.org CDN yükleme fonksiyonu
+│
+├── publishers/                   # Platform yayın modülleri
+│   ├── instagram.py              # Meta Graph API (Reels + Story)
+│   ├── youtube.py                # YouTube Data API v3
+│   ├── threads.py                # Threads API
+│   ├── zernio.py                 # Zernio API ortak altyapısı
+│   ├── tiktok.py                 # Zernio TikTok
+│   └── pinterest.py              # Zernio Pinterest
+│
+├── etsy/                         # Etsy entegrasyonu
+│   ├── fetcher.py                # Ürün verisi çekme
+│   ├── auth.py                   # OAuth 2.0 PKCE kimlik doğrulama
+│   └── optimizer.py              # Toplu SEO optimizasyonu
+│
+├── content/                      # İçerik üretim pipeline'ı
+│   ├── video_generator.py        # OpenCV + MoviePy video render
+│   ├── prompt_generator.py       # NVIDIA NIM AI metin üretimi
+│   ├── reels_engine.py           # Otomatik reels oluşturma motoru
+│   └── music_downloader.py       # yt-dlp müzik indirme
+│
+├── bot/                          # Telegram bot mantığı
+│   ├── handlers.py               # Komut handler'ları (/test, /status, /skip)
+│   ├── scheduler.py              # Günlük iş zamanlama
+│   └── approval.py               # Onay/ret callback ve yayın orkestrasyon
+│
+├── scripts/                      # Yardımcı araçlar
+│   ├── deploy.bat                # Oracle Cloud tek tıkla deployment
+│   ├── yt_reauth.py              # YouTube token yeniden yetkilendirme
+│   └── test_yt_refresh.py        # YouTube token sağlık kontrolü
+│
+└── assets/                       # Statik dosyalar
+    ├── fonts/                    # Özel tipografi
+    ├── audio/                    # Müzik dosyaları (gitignore)
+    └── images/                   # Ürün görselleri (gitignore)
 ```
 
 ---
 
-## Setup
+## Kurulum
 
-### Prerequisites
+### Gereksinimler
 - Python 3.10+
-- Oracle Cloud account (free tier works)
+- Oracle Cloud hesabı (ücretsiz tier yeterli)
 
-### Installation
+### Yükleme
 
 ```bash
 git clone https://github.com/SalihSay/deathlipse-bot.git
@@ -126,60 +141,60 @@ cd deathlipse-bot
 pip install -r requirements.txt
 ```
 
-### Configuration
+### Yapılandırma
 
-Create a `.env` file in the root directory:
+Proje kök dizininde bir `.env` dosyası oluşturun:
 
 ```env
 # Telegram
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_GROUP_ID=your_group_id
+TELEGRAM_BOT_TOKEN=sizin_bot_tokeniniz
+TELEGRAM_GROUP_ID=sizin_grup_idniz
 
 # Meta (Instagram/Threads)
-META_PAGE_ACCESS_TOKEN=your_meta_token
-META_IG_USER_ID=your_ig_user_id
+META_PAGE_ACCESS_TOKEN=sizin_meta_tokeniniz
+META_IG_USER_ID=sizin_ig_kullanici_idniz
 
 # Zernio (TikTok + Pinterest)
-ZERNIO_API_KEY=your_zernio_key
-ZERNIO_TIKTOK_ACCOUNT_ID=your_tiktok_id
-ZERNIO_PINTEREST_ACCOUNT_ID=your_pinterest_id
+ZERNIO_API_KEY=sizin_zernio_anahtariniz
+ZERNIO_TIKTOK_ACCOUNT_ID=sizin_tiktok_idniz
+ZERNIO_PINTEREST_ACCOUNT_ID=sizin_pinterest_idniz
 
 # NVIDIA NIM
-NVIDIA_API_KEY=your_nvidia_key
+NVIDIA_API_KEY=sizin_nvidia_anahtariniz
 ```
 
-Set up YouTube OAuth:
+YouTube OAuth kurulumu:
 ```bash
-python yt_reauth.py
+python scripts/yt_reauth.py
 ```
 
-### Deploy to Oracle Cloud
+### Oracle Cloud'a Deployment
 
 ```bash
-deploy.bat
+scripts/deploy.bat
 ```
 
-### Run Locally
+### Lokalde Çalıştırma
 
 ```bash
-python telegram_bot.py
+python main.py
 ```
 
 ---
 
-## Security
+## Güvenlik
 
-All sensitive files are excluded from version control via `.gitignore`:
-- `.env` — API keys and tokens
-- `client_secrets.json` / `token.json` — Google OAuth credentials
-- `oracle_key.pem` — SSH private key
-- `etsy_token.json` — Etsy OAuth token
-- `bulk_schedule.csv` — Product data
-- `assets/images/` — Product images
-- `*.mp4` — Generated videos
+Tüm hassas dosyalar `.gitignore` ile versiyon kontrolünden hariç tutulmuştur:
+- `.env` — API anahtarları ve token'lar
+- `client_secrets.json` / `token.json` — Google OAuth kimlik bilgileri
+- `oracle_key.pem` — SSH özel anahtarı
+- `etsy_token.json` — Etsy OAuth token'ı
+- `bulk_schedule.csv` — Ürün verileri
+- `assets/images/` — Ürün görselleri
+- `*.mp4` — Üretilen videolar
 
 ---
 
-## License
+## Lisans
 
-This project is open source for educational and portfolio purposes.
+Bu proje eğitim ve portföy amaçlı açık kaynak olarak paylaşılmıştır.
