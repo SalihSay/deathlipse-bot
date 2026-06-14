@@ -21,3 +21,5 @@ generator_test_output*.txt
 assets/posted_products.json
 assets/images/
 *.mp4
+Book1.xlsx
+output_analysis.txt
