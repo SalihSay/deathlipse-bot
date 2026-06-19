@@ -182,18 +182,30 @@ def main(batch_limit=1, force_id=None):
                 print("-> Failed to download mockup.")
                 continue
                 
-            filename = f"post_{product['id']}.png"
+            import re
+            safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', clean_title.strip())
+            safe_title = re.sub(r'_+', '_', safe_title).strip('_')
+            if not safe_title:
+                safe_title = f"product_{product['id']}"
+                
+            product_dir = f"media/{safe_title}"
+            os.makedirs(product_dir, exist_ok=True)
+            
+            filename = "image.png"
+            image_path = f"{product_dir}/{filename}"
+            
             # Orijinal Printify mockup resmini doğrudan kaydet ve arka planı sil!
-            print("-> Removing background from mockup...")
+            print(f"-> Removing background from mockup and saving to {image_path}...")
             try:
                 transparent_img = remove(mockup_resp.content)
-                with open(f"bulk_images/{filename}", "wb") as f_img:
+                with open(image_path, "wb") as f_img:
                     f_img.write(transparent_img)
                 print("-> Printify transparent mockup saved successfully.")
             except Exception as e:
                 print(f"-> Background removal failed: {e}. Saving original.")
-                filename = f"post_{product['id']}.jpg"
-                with open(f"bulk_images/{filename}", "wb") as f_img:
+                filename = "image.jpg"
+                image_path = f"{product_dir}/{filename}"
+                with open(image_path, "wb") as f_img:
                     f_img.write(mockup_resp.content)
                 
             print("-> Generating caption...")
@@ -208,17 +220,18 @@ def main(batch_limit=1, force_id=None):
                 
             social_data = generate_social_caption(clean_title)
             hook_text = social_data.get("hook", "")
+            social_data["product_id"] = product["id"]
             
-            print("-> Generating TikTok/Reels video...")
-            video_filename = f"reel_{product['id']}.mp4"
-            video_path = f"reels_output/{video_filename}"
-            video_generator.generate_tiktok_video(f"bulk_images/{filename}", video_path, hook_text=hook_text, product_type=product_type)
+            print(f"-> Generating TikTok/Reels video in {product_dir}...")
+            video_filename = "video.mp4"
+            video_path = f"{product_dir}/{video_filename}"
+            video_generator.generate_tiktok_video(image_path, video_path, hook_text=hook_text, product_type=product_type)
             
             product_url = product.get("url", "https://www.etsy.com/shop/Deathlipse")
             
             # JSON'ı encode edip CSV'ye yazalım, telegram_bot.py oradan okusun
             social_json_str = json.dumps(social_data)
-            writer.writerow([social_json_str, social_data.get("pinterest", ""), filename, video_filename, product_url, "PENDING"])
+            writer.writerow([social_json_str, social_data.get("pinterest", ""), image_path, video_path, product_url, "PENDING"])
             print("-> Successfully added to bulk_schedule.csv!")
             
             # Kalici listeye ekle

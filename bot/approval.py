@@ -60,8 +60,8 @@ async def check_for_posts(context: ContextTypes.DEFAULT_TYPE):
         social_data = {"caption_a": row[0]}
         
     pin_text = row[1]
-    img_file = f"bulk_images/{row[2]}"
-    vid_file = f"reels_output/{row[3]}"
+    img_file = row[2] if "/" in row[2] else f"bulk_images/{row[2]}"
+    vid_file = row[3] if "/" in row[3] else f"reels_output/{row[3]}"
     product_url = row[4]
     
     msg = "🎬 YENİ GÖNDERİ ONAY BEKLİYOR\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n📝 CAPTION A (Agresif):\n"
@@ -121,18 +121,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Bu gönderi zaten işlenmiş.")
         return
         
-    vid_file = f"reels_output/{row[3]}"
-    img_file = f"bulk_images/{row[2]}"
+    vid_file = row[3] if "/" in row[3] else f"reels_output/{row[3]}"
+    img_file = row[2] if "/" in row[2] else f"bulk_images/{row[2]}"
     product_url = row[4]
-    
-    prod_id = row[2].replace("post_", "").replace(".jpg", "")
     
     try:
         social_data = json.loads(row[0])
         caption = social_data.get("caption_a", "Deathlipse 🖤")
+        prod_id = social_data.get("product_id")
     except:
+        social_data = {"caption_a": row[0]}
         caption = row[0]
+        prod_id = None
         
+    if not prod_id:
+        prod_id = row[2].split("/")[-1].replace("post_", "").replace(".png", "").replace(".jpg", "")
+
     if action == "skip":
         update_status(index, "SKIPPED", prod_id)
         await query.edit_message_text("❌ Gönderi atlandı (Skipped).")

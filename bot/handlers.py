@@ -23,7 +23,16 @@ async def skip_current_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if not row:
         await update.message.reply_text("Şu anda bekleyen (PENDING) hiçbir gönderi yok.")
         return
-    prod_id = row[2].replace("post_", "").replace(".jpg", "").replace(".png", "")
+    import json
+    try:
+        social_data = json.loads(row[0])
+        prod_id = social_data.get("product_id")
+    except:
+        prod_id = None
+        
+    if not prod_id:
+        prod_id = row[2].split("/")[-1].replace("post_", "").replace(".jpg", "").replace(".png", "")
+        
     update_status(index, "SKIPPED", prod_id)
     await update.message.reply_text(f"✅ {prod_id} ID'li gönderi başarıyla atlandı! Sıradaki ürünü görmek için /test yazabilirsiniz.")
 
