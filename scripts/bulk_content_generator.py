@@ -149,7 +149,14 @@ def main(batch_limit=1, force_id=None):
             print(f"\n[{idx+1}/{len(products)}] Processing: {product.get('title')}")
             
             product_id = product["id"]
-            if (str(product_id) in processed_ids or str(product_id) in posted_products) and str(product_id) != str(force_id):
+            
+            is_published_or_skipped = False
+            if str(product_id) in posted_products:
+                status = posted_products[str(product_id)].get("status")
+                if status in ["PUBLISHED", "SKIPPED"]:
+                    is_published_or_skipped = True
+
+            if (str(product_id) in processed_ids or is_published_or_skipped) and str(product_id) != str(force_id):
                 print("-> Already processed, skipping.")
                 continue
                 
