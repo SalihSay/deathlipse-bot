@@ -316,7 +316,12 @@ def generate_tiktok_video(image_path, output_path, hook_text="", product_type="d
         
     if audio_files:
         selected_audio = random.choice(audio_files)
-        print(f"[{os.path.basename(image_path)}] Applying Audio: {selected_audio}")
+        try:
+            print(f"[{os.path.basename(image_path)}] Applying Audio: {selected_audio}")
+        except UnicodeEncodeError:
+            safe_audio = selected_audio.encode('ascii', 'ignore').decode('ascii')
+            safe_img = os.path.basename(image_path).encode('ascii', 'ignore').decode('ascii')
+            print(f"[{safe_img}] Applying Audio: {safe_audio}")
         try:
             audioclip = AudioFileClip(selected_audio)
             # Eğer ses videodan kısaysa döngüye sok

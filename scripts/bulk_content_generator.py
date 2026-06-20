@@ -146,7 +146,12 @@ def main(batch_limit=1, force_id=None):
             
         generated_count = 0
         for idx, product in enumerate(products):
-            print(f"\n[{idx+1}/{len(products)}] Processing: {product.get('title')}")
+            title = product.get('title', '')
+            try:
+                print(f"\n[{idx+1}/{len(products)}] Processing: {title}")
+            except UnicodeEncodeError:
+                safe_title = title.encode('ascii', 'ignore').decode('ascii')
+                print(f"\n[{idx+1}/{len(products)}] Processing: {safe_title}")
             
             product_id = product["id"]
             
