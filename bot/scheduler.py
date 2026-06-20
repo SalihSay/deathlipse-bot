@@ -1,36 +1,33 @@
+"""
+Zamanlayıcı görevleri — günlük hatırlatma ve token süresi kontrolü.
+"""
 import os
-import asyncio
 from datetime import datetime
 from telegram.ext import ContextTypes
 from core.config import TELEGRAM_GROUP_ID
-from bot.approval import check_for_posts, get_next_pending_post
-
-async def run_generator_job(context: ContextTypes.DEFAULT_TYPE):
-    print("Running daily bulk content generator...")
-    proc = await asyncio.create_subprocess_exec(
-        "python", "scripts/bulk_content_generator.py",  "--batch", "1",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
-    print(f"Generator finished with code {proc.returncode}")
-    await check_for_posts(context)
+from bot.approval import get_all_pending_posts
 
 async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
-    row, index = get_next_pending_post()
-    if not row:
+    """Günde 1 kez hatırlatma — bekleyen ürün varsa bildir."""
+    pending = get_all_pending_posts()
+    if not pending:
         return
-    msg = "⚠️ *Önemli Hatırlatma!*\n\nBugünkü gönderiyi hala onaylamadınız. Gönderinin zamanında yayınlanması için yukarıdaki mesajdan onaylamayı unutmayın!"
+    
+    msg = (
+        f"📢 Günlük Hatırlatma!\n\n"
+        f"Bekleyen {len(pending)} ürün var.\n"
+        f"Bugün paylaşacağın ürünü seçmek için /pick yaz."
+    )
     try:
         await context.bot.send_message(
             chat_id=TELEGRAM_GROUP_ID,
-            text=msg,
-            parse_mode='Markdown'
+            text=msg
         )
     except Exception as e:
         print(f"Failed to send reminder: {e}")
 
 async def check_token_expiry(context: ContextTypes.DEFAULT_TYPE):
+    """Meta API token süresini kontrol eder."""
     issue_date_str = os.getenv("META_TOKEN_ISSUE_DATE", "")
     if not issue_date_str:
         print("[!] META_TOKEN_ISSUE_DATE bulunamadı, token süresi takip edilemiyor.")
