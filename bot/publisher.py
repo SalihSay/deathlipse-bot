@@ -141,37 +141,47 @@ async def publish_post(row, caption_choice="a"):
     else:
         caption = social_data.get(f"caption_{caption_choice}", social_data.get("caption_a", "Deathlipse 🖤"))
     
+    # Karakter sınırlarını güvenceye al
+    # TikTok ve Instagram sınırı genellikle 2200 karakterdir
+    if len(caption) > 2200:
+        caption = caption[:2197] + "..."
+
     prod_id = social_data.get("product_id")
     if not prod_id:
         prod_id = row[2].split("/")[-1].replace("post_", "").replace(".png", "").replace(".jpg", "")
     
     results = {}
     
-    # TikTok
+    # TikTok (Limit: 2200)
     try:
         results["tiktok"] = tiktok.post(caption, vid_file, "video")
     except Exception as e:
         print(f"TikTok fail: {e}")
         results["tiktok"] = False
     
-    # Pinterest
+    # Pinterest (Limit: 500)
     p_caption = row[1] if len(row) > 1 and row[1].strip() else caption
+    if len(p_caption) > 500:
+        p_caption = p_caption[:497] + "..."
+        
     try:
         results["pinterest"] = pinterest.post(p_caption, img_file, "image")
     except Exception as e:
         print(f"Pinterest fail: {e}")
         results["pinterest"] = False
     
-    # Instagram Reels
+    # Instagram Reels (Limit: 2200)
     try:
         results["ig_reels"] = await instagram.post_reels(vid_file, caption)
     except Exception as e:
         print(f"IG Reels fail: {e}")
         results["ig_reels"] = False
     
-    # YouTube Shorts
+    # YouTube Shorts (Title Limit: 100, Desc Limit: 5000)
     try:
         yt_title = social_data.get("etsy_title", "Deathlipse 🖤")
+        if len(yt_title) > 100:
+            yt_title = yt_title[:97] + "..."
         yt_desc = caption
         yt_tags_raw = social_data.get("etsy_tags", "metal,goth,streetwear")
         if isinstance(yt_tags_raw, str):
